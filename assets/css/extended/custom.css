@@ -31,3 +31,8 @@ code, pre, .highlight {
     white-space: pre-wrap !important; /* Ensures long lines wrap instead of squishing */
 }
 
+/* Fix Hugo Chroma Syntax Highlighter overlapping issue */
+.chroma .line {
+    display: block !important;
+}
+
