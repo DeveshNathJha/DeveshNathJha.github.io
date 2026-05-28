@@ -305,3 +305,21 @@ The production design patterns that address these failures are: dual-layer adapt
 These components form a stateful pipeline where failure at any stage propagates forward. A silently discarded ingestion page produces no child chunk, no parent context, no retrieved evidence, and ultimately a faithfulness score of zero. The observability at the end of the pipeline is only useful when the data integrity at the beginning is guaranteed.
 
 RAG in healthcare is a systems engineering problem. Every component owns a failure mode. Every failure mode has a concrete fix. There is no shortcut past any of them.
+
+---
+
+<div class="author-card">
+  <h3>Connect & Collaborate</h3>
+  <p>Have questions about scaling RAG pipelines in high-stakes clinical domains, or interested in collaborating on robust, production-grade clinical AI applications? Let's connect!</p>
+  <div class="author-links">
+    <a href="https://www.linkedin.com/in/jha-devesh/" target="_blank" class="author-link-btn linkedin-btn">
+      <svg class="author-icon" viewBox="0 0 24 24"><path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.32 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.79M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z"/></svg>
+      LinkedIn Profile
+    </a>
+    <a href="mailto:deveshjnv2002@gmail.com" class="author-link-btn email-btn">
+      <svg class="author-icon" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
+      Email Address
+    </a>
+  </div>
+</div>
+

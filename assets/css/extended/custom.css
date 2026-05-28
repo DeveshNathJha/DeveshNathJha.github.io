@@ -95,3 +95,88 @@ pre {
     border-radius: 8px !important;
     border: 1px solid var(--border) !important;
 }
+
+/* Premium Author Card Bio Box */
+.author-card {
+    margin-top: 3em !important;
+    padding: 2em !important;
+    border-radius: 12px !important;
+    background-color: var(--code-bg) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important;
+}
+
+.author-card h3 {
+    margin-top: 0 !important;
+    margin-bottom: 0.5em !important;
+    font-size: 1.4em !important;
+}
+
+.author-card p {
+    font-size: 1em !important;
+    line-height: 1.6 !important;
+    color: var(--secondary) !important;
+    margin-bottom: 1.5em !important;
+}
+
+.author-links {
+    display: flex !important;
+    gap: 1em !important;
+    flex-wrap: wrap !important;
+}
+
+.author-link-btn {
+    display: inline-flex !important;
+    align-items: center !important;
+    padding: 0.6em 1.2em !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    font-size: 0.9em !important;
+    text-decoration: none !important;
+    transition: all 0.2s ease !important;
+}
+
+/* Light mode button styling */
+.linkedin-btn {
+    background-color: #0077b5 !important;
+    color: #ffffff !important;
+}
+
+.linkedin-btn:hover {
+    background-color: #005a8a !important;
+    color: #ffffff !important;
+}
+
+.email-btn {
+    background-color: #b32424 !important;
+    color: #ffffff !important;
+}
+
+.email-btn:hover {
+    background-color: #8c1c1c !important;
+    color: #ffffff !important;
+}
+
+/* Dark mode button styling overrides */
+.dark .linkedin-btn, [data-theme=dark] .linkedin-btn {
+    background-color: #0077b5 !important;
+    color: #ffffff !important;
+}
+
+.dark .email-btn, [data-theme=dark] .email-btn {
+    background-color: #e6b800 !important;
+    color: #121212 !important;
+}
+
+.dark .email-btn:hover, [data-theme=dark] .email-btn:hover {
+    background-color: #ffcc00 !important;
+    color: #121212 !important;
+}
+
+.author-icon {
+    width: 18px !important;
+    height: 18px !important;
+    margin-right: 8px !important;
+    fill: currentColor !important;
+}
+

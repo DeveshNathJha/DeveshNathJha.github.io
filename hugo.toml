@@ -8,3 +8,12 @@ theme = "PaperMod"
   description = "Engineering, AI, and Systems Architecture"
   ShowReadingTime = true
   ShowToc = true
+
+  [[params.socialIcons]]
+    name = "linkedin"
+    url = "https://www.linkedin.com/in/jha-devesh/"
+
+  [[params.socialIcons]]
+    name = "email"
+    url = "mailto:deveshjnv2002@gmail.com"
+
