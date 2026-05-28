@@ -1,0 +1,10 @@
+baseURL = "https://deveshnathjha.github.io/"
+languageCode = "en-us"
+title = "Devesh Nath Jha"
+theme = "PaperMod"
+
+[params]
+  author = "Devesh Nath Jha"
+  description = "Engineering, AI, and Systems Architecture"
+  ShowReadingTime = true
+  ShowToc = true
