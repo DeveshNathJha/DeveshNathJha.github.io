@@ -1,0 +1,1534 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>Why Naive RAG Fails in Healthcare and What Matters in Clinical RAG | Devesh Nath Jha</title>
+<meta name="keywords" content="">
+<meta name="description" content="In a sandbox, you load a handful of clean PDFs, slice them at 512 tokens, write vectors to a local FAISS index, and wire the components together. The outputs look reasonable. In a production clinical deployment, that same architecture breaks before a single query reaches the model. Nothing in the logs tells you where.
+This post documents four concrete failure modes that appear in clinical RAG systems, the production design patterns that address each one, and the trade-offs behind every decision. The document types a production clinical system must handle include typed clinical PDFs, scanned patient records, faxed referral letters, structured laboratory exports, and medical guideline documents with complex tabular layouts.">
+<meta name="author" content="Devesh Nath Jha">
+<link rel="canonical" href="https://deveshnathjha.github.io/posts/why-naive-rag-fails-healthcare/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.6ff46447b1fa3f8a5cc0bcae48088decc3ae37f5fbc99406a3aefc3bf0e6044a.css" integrity="sha256-b/RkR7H6P4pcwLyuSAiN7MOuN/X7yZQGo678O/DmBEo=" rel="preload stylesheet" as="style">
+<link rel="icon" href="https://deveshnathjha.github.io/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="https://deveshnathjha.github.io/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="https://deveshnathjha.github.io/favicon-32x32.png">
+<link rel="apple-touch-icon" href="https://deveshnathjha.github.io/apple-touch-icon.png">
+<link rel="mask-icon" href="https://deveshnathjha.github.io/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="https://deveshnathjha.github.io/posts/why-naive-rag-fails-healthcare/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="https://deveshnathjha.github.io/posts/why-naive-rag-fails-healthcare/">
+  <meta property="og:site_name" content="Devesh Nath Jha">
+  <meta property="og:title" content="Why Naive RAG Fails in Healthcare and What Matters in Clinical RAG">
+  <meta property="og:description" content="In a sandbox, you load a handful of clean PDFs, slice them at 512 tokens, write vectors to a local FAISS index, and wire the components together. The outputs look reasonable. In a production clinical deployment, that same architecture breaks before a single query reaches the model. Nothing in the logs tells you where.
+This post documents four concrete failure modes that appear in clinical RAG systems, the production design patterns that address each one, and the trade-offs behind every decision. The document types a production clinical system must handle include typed clinical PDFs, scanned patient records, faxed referral letters, structured laboratory exports, and medical guideline documents with complex tabular layouts.">
+  <meta property="og:locale" content="en_us">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2026-05-28T14:30:00+05:30">
+    <meta property="article:modified_time" content="2026-05-28T14:30:00+05:30">
+
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Why Naive RAG Fails in Healthcare and What Matters in Clinical RAG">
+  <meta name="twitter:description" content="In a sandbox, you load a handful of clean PDFs, slice them at 512 tokens, write vectors to a local FAISS index, and wire the components together. The outputs look reasonable. In a production clinical deployment, that same architecture breaks before a single query reaches the model. Nothing in the logs tells you where.
+This post documents four concrete failure modes that appear in clinical RAG systems, the production design patterns that address each one, and the trade-offs behind every decision. The document types a production clinical system must handle include typed clinical PDFs, scanned patient records, faxed referral letters, structured laboratory exports, and medical guideline documents with complex tabular layouts.">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "https://deveshnathjha.github.io/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "Why Naive RAG Fails in Healthcare and What Matters in Clinical RAG",
+      "item": "https://deveshnathjha.github.io/posts/why-naive-rag-fails-healthcare/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Why Naive RAG Fails in Healthcare and What Matters in Clinical RAG",
+  "name": "Why Naive RAG Fails in Healthcare and What Matters in Clinical RAG",
+  "description": "In a sandbox, you load a handful of clean PDFs, slice them at 512 tokens, write vectors to a local FAISS index, and wire the components together. The outputs look reasonable. In a production clinical deployment, that same architecture breaks before a single query reaches the model. Nothing in the logs tells you where.\nThis post documents four concrete failure modes that appear in clinical RAG systems, the production design patterns that address each one, and the trade-offs behind every decision. The document types a production clinical system must handle include typed clinical PDFs, scanned patient records, faxed referral letters, structured laboratory exports, and medical guideline documents with complex tabular layouts.\n",
+  "keywords": [
+    
+  ],
+  "articleBody": "In a sandbox, you load a handful of clean PDFs, slice them at 512 tokens, write vectors to a local FAISS index, and wire the components together. The outputs look reasonable. In a production clinical deployment, that same architecture breaks before a single query reaches the model. Nothing in the logs tells you where.\nThis post documents four concrete failure modes that appear in clinical RAG systems, the production design patterns that address each one, and the trade-offs behind every decision. The document types a production clinical system must handle include typed clinical PDFs, scanned patient records, faxed referral letters, structured laboratory exports, and medical guideline documents with complex tabular layouts.\nThe Data Problem Comes Before the Model Problem Every failure mode discussed below originates from the same root cause: the data environment in healthcare is hostile by default.\nClinical information is split across hospitals, outpatient clinics, radiology systems, and insurance platforms. None of these systems share a common format. A patient’s primary diagnosis may sit in a typed PDF at one facility, their comorbidity list in a scanned fax from another, and their lab values in an Excel export from a third. This is not an edge case. It is the standard operational reality.\nThe direct engineering implication: no amount of model quality compensates for incomplete indexing. A state-of-the-art LLM reasoning over a contaminated or partial vector index will produce confident, plausible, and clinically wrong answers. The model has no visibility into what was silently dropped at ingestion. It can only reason over what the retriever surfaces.\nEvery architectural decision in a clinical RAG system must be evaluated against this constraint first.\nFailure Mode 1: Ingestion Collapse on Non-Digital Records What Naive Systems Do Standard PDF parsing libraries (pdfplumber, PyPDF2, LangChain’s default PyPDFLoader) extract text from a PDF’s content stream. When that stream is absent, they return an empty string. No exception is raised. The page counter increments. The embedding call receives an empty string and encodes it into a near-zero vector that is written into the index.\nClinical records routinely contain pages with no selectable text layer: scanned referral letters, photographed pathology reports, faxed discharge summaries, and legacy records digitized at low resolution. At scale, every one of these pages becomes a silent void in the index. A clinician querying for a patient’s prior surgical history may receive a “no relevant information found” response precisely because that history lived on a scanned page the ingestion pipeline discarded without logging anything.\nThe Correct Architecture: Dual-Layer OCR Production ingestion pipelines for clinical documents require a two-stage extraction strategy.\nStage 1 (PyMuPDF / fitz): Process every page with PyMuPDF first. It is fast, handles digital PDFs with high fidelity, preserves reading order, and correctly parses multi-column clinical layouts that simpler parsers scramble.\nStage 2 (Adaptive EasyOCR Fallback): When PyMuPDF returns a blank result, the pipeline rasterizes the page to an image and passes it through EasyOCR. A single retry is not enough. An adaptive DPI loop is necessary: render at 2x DPI first, and if the result is still insufficient, re-render at 3x DPI. Scanned documents arrive at different source resolutions and the pipeline must account for that.\nStructured data from CSV and Excel files is a separate case. Parse each row independently as its own sentence before passing it to the chunking stage.\n# Dual-layer ingestion pattern page_text = extract_with_pymupdf(page) if not page_text.strip(): image = rasterize_page(page, dpi=200) page_text = run_easyocr(image) if not page_text.strip(): image = rasterize_page(page, dpi=300) # Adaptive retry page_text = run_easyocr(image) # Flag the page, never silently discard it Every chunk produced from an OCR-processed page should carry an ocr_used boolean in its metadata. This single field makes ingestion quality observable downstream. When a faithfulness score drops, you can immediately determine whether the source content was digitally extracted or OCR-recovered.\nCloud OCR vs. Local Pipeline: Choosing the Right Default AWS Textract and Google Cloud Document AI are mature, accurate, and significantly easier to operate at scale than a local OCR stack. For many deployments, they are the right choice.\nThe decision point is data sensitivity. When documents contain identifiable patient information, routing them through a managed cloud OCR service means that data traverses a third-party network boundary on every ingestion call. For deployments bound by strict HIPAA controls or national data residency requirements, this may be a non-starter. Not because cloud is architecturally inferior, but because the regulatory context does not permit it.\nFor those cases, a local pipeline (PyMuPDF + EasyOCR) provides a self-contained extraction layer with zero external data exposure. The trade-off is real: local EasyOCR requires GPU resources for production throughput, and its accuracy on highly degraded handwritten records does not match Textract’s. It also requires your team to own the operational maintenance.\nThe practical guidance: use cloud OCR when data governance permits it and you want lower operational overhead. Use a local pipeline when data residency is non-negotiable or when you need predictable per-document costs at high ingestion volume. Both are valid. The dual-layer fallback pattern works the same way regardless of which extraction backend you plug in behind it.\nFailure Mode 2: Vector Collapse on Clinical Entities What Naive Systems Do Dense embedding models like all-MiniLM-L6-v2 (384 dimensions) compress the full semantic content of a text span into a single vector through mean pooling over token representations. This compression is not lossless. It produces a weighted average of the tokens in the span.\nFor general-domain text, this works. For clinical text, it breaks in a specific and damaging way.\nConsider this sentence: “Patient presents with Type 2 Diabetes Mellitus (ICD-10: E11.9), hypertensive crisis (ICD-10: I16.0), and early-stage chronic kidney disease (ICD-10: N18.3).”\nA fixed-size chunker at 512 tokens will, with high probability, split this across a chunk boundary. The ICD-10 code gets separated from its qualifying condition. The resulting chunk contains “hypertensive crisis” as its dominant semantic signal. The vector is shaped primarily by the high-frequency clinical term “hypertension.” The code I16.0, which specifically distinguishes a hypertensive crisis from chronic hypertension, is averaged out. Its weight in the final embedding is negligible.\nThis is vector collapse. Rare but diagnostically critical entities (specific comorbidities, drug contraindication codes, rare genetic markers) get overwhelmed by high-frequency surrounding terms. A query for “contraindicated drugs in CKD stage 3” retrieves chunks that are thematically adjacent to kidney disease, not the chunks that encode stage 3 specifically. The retriever returns the wrong context. The model reasons over it confidently.\nThe Correct Architecture: Parent-Child Chunking The fix is architectural: separate the retrieval unit from the generation unit.\nChild chunks are small (400 characters, 50-char overlap). Their size is calibrated to contain a single clinical statement: one diagnosis with its ICD code, one medication with its dosage constraint. These are the only units indexed into the vector store. Embedding a small, focused span reduces averaging and preserves the signal of rare entities.\nParent chunks are larger (1500 characters, 100-char overlap) and stored in a separate key-value structure. Every child chunk carries a parent_id in its metadata pointing to its enclosing parent.\nRetrieval expansion is the critical step. When the vector store returns the top-k child chunks, the pipeline does not pass those children to the LLM. It resolves each parent_id and passes the full parent chunk instead. The model receives complete clinical context. The retriever operated on precise entity-level spans.\n# Parent-Child retrieval expansion child_results = faiss_index.similarity_search(query, k=10) contexts_for_llm = [] for child in child_results: parent_id = child.metadata[\"parent_id\"] parent_chunk = parent_store[parent_id] # Full 1500-char context contexts_for_llm.append(parent_chunk) Fixed-size chunking forces a choice between retrieval precision and generation context. Parent-child chunking removes that constraint: the retriever operates on small spans, the generator receives large ones.\nFailure Mode 3: The Lost-in-the-Middle Problem What Naive Systems Do Retrieving top-k chunks by cosine similarity and concatenating them in ranked order before passing to the LLM introduces a retrieval ordering problem that is independent of chunk quality.\nLLMs do not attend uniformly across a context window. Transformer attention patterns show consistent primacy and recency bias: the model gives disproportionate weight to content at the start and end of the prompt, with reduced attention to content in the middle. If the most clinically relevant retrieved passage ends up in the middle of a large assembled context block, the model underweights it during generation. The response looks grounded but has effectively ignored the most relevant evidence.\nThere is a second, related problem. Cosine similarity measures geometric proximity in embedding space, not clinical relevance. A chunk about general diabetes management may be vectorially closer to a query than a chunk containing a specific drug contraindication, simply because the former’s language is more common in the embedding model’s training distribution. Bi-encoder retrieval cannot distinguish between these two cases.\nThe Correct Architecture: Cross-Encoder Reranking After bi-encoder retrieval, a cross-encoder reranking step is necessary before context assembly.\nBi-encoders are fast because they compare pre-computed vectors independently. Cross-encoders process the query and each candidate passage jointly, attending to the direct relationship between them. This joint attention is what makes them superior for relevance scoring. They evaluate the specific query-passage relationship, not just embedding proximity.\nFlashRank is a lightweight cross-encoder designed for fast reranking without significant latency overhead. The retrieval sequence becomes:\nF A I S S ( b i - e n c o d e r , k = 1 0 ) F l a s h R a n k c r o s s - e n c o d e r r e r a n k t o p - 3 p a r e n t e x p a n s i o n L L M The top-3 reranked passages are assembled with the highest-relevance passage first. This directly counters the lost-in-the-middle effect by placing the highest-signal context at the position of maximum LLM attention.\nThe cap at top-3 is deliberate. Every token in the prompt has a cost. Token counting with tiktoken (cl100k_base) enforces a hard MAX_CONTEXT_TOKENS = 6000 limit, and the pipeline drops the least relevant chunks first. Fewer, higher-quality chunks consistently outperform a larger, noisier context block on both quality metrics (nDCG, MRR) and inference cost.\nIn air-gapped hospital environments where the cross-encoder model cannot be loaded, the pipeline should fall back to raw bi-encoder scores rather than crashing. Retrieval quality degrades predictably and the system stays functional.\nFailure Mode 4: Subjective Evaluation in a Zero-Tolerance Domain What Naive Systems Do Manual review of model outputs is the default evaluation method for most RAG prototypes. In a general-purpose assistant, it is a reasonable starting point. In a clinical system, it is inadequate as the primary quality signal.\nThe core problem is not speed. Manual review is non-deterministic, non-reproducible, and provides no signal to the pipeline itself. When output quality begins degrading (a common symptom of index drift after document ingestion events), manual review will not detect it until the degradation is severe. By that point, the number of queries that received degraded output is unknown.\nMore critically, manual review cannot distinguish between two distinct failure causes. The generative model may have introduced facts not present in any retrieved chunk (faithfulness failure), or the retriever may have surfaced wrong chunks and the model reasoned correctly over incorrect context (retrieval failure). These require different remediation. Without per-query diagnostics that separate these two failure modes, engineers are guessing at root cause.\nThe Correct Architecture: Deterministic LLM-as-Judge Every query response in a production clinical RAG system should be scored by an automated judge before the result is stored or returned to the caller.\nThe judge is a separate, lightweight LLM call using a small model (llama-3-8b-8192) at temperature=0. Temperature zero is not optional. It makes the judge deterministic. For the same inputs, the judge will always return the same scores, which is a prerequisite for treating evaluation output as a metric rather than an opinion.\nA single judge call produces three scores on [0, 1]:\nFaithfulness: Does the answer use only information present in the retrieved context? A low score is a hallucination signal. Answer Relevance: Does the answer address what was asked? A low score points to retrieval or prompt construction failure. Context Precision: Did the retrieved passages contain the information needed? This is the retriever’s direct quality signal. The judge prompt must explicitly account for medical synonymy. “Fracture” and “broken bone” are semantically equivalent, and a judge that penalizes this substitution will produce false faithfulness failures. This is a clinical domain-specific prompt engineering requirement.\n# Composite grading logic # GRADE_THRESHOLDS = {\"A\": 0.85, \"B\": 0.70, \"C\": 0.50} composite = (faithfulness + answer_relevance + context_precision) / 3 grade = \"A\" if composite \u003e= 0.85 else \"B\" if composite \u003e= 0.70 else \"C\" if composite \u003e= 0.50 else \"F\" When a response grades C or F, the telemetry on that query includes the exact chunk IDs retrieved, reranker scores, index version, and OCR metadata for the source pages. An engineer can trace a faithfulness failure back to the specific chunk, and then to the ingestion event that produced it.\nThe judge must never block the main query path. Any failure (timeout, parse error, unexpected output) should return null scores and let the primary response through. At approximately $0.000025 per evaluation call, this is not a meaningful cost constraint.\nStandard Production Execution Trace A production clinical RAG get_response() should execute in this sequence. Each phase should be independently timed and logged.\nP P P P P P P P P P P R h h h h h h h h h h h e a a a a a a a a a a a t s s s s s s s s s s s u e e e e e e e e e e e r n 0 1 2 2 2 3 3 4 5 5 6 : : : : . . : . : : . : 5 6 5 5 : : : : Q V C p t c s L J T Q { u e r a r o e L u o u a e c o r i u l M d k e n r D 1 t T s e m D n e R R . g e r s y e - o h s n _ r t c o o i e n y w C t h r r E t t o _ t u u n . B C e a e o S e n _ o p t _ t t v e u a r c r u t a c s _ o m e e o v d c , h m r o d o t t l k o k a g h e i r - d o o e e d t t e l e e s . n T e s e r k a n e o o ( u t . o g i T . a r e e s s l p a . s u e s L s f . [ n t ( ( l f r t r e r t t ; e e r c _ - q q i u o e e t c ( i a e h b r u u g l m ( c ( e q c c r r r i u e e e h l p q o q s u a c e a l d l r r t t u r u , e k c h a n d g e y y w m ) e d e r e h ( d k . e v , e o r ( r c y y e q ; ( p t a + i d y q y a , u q a ( n t g e , u , c ( h e F u r c t c o h l e h d S i r A e e o o k t r c r d e o H t y I r n n c n e o e o y o _ c A , S y t t h t n m t s n , c h u - = S , _ e u e s o h p t u i m 2 k i x n x _ d e o e t m t e 5 i = I c d t k t i e r n x o e , n 6 m 1 / a ] , s ) n l w s t k n t m 0 O n p i e , e t m _ o e ) d m f = u i s _ n _ o s f d w i a i t f e t r s s d c i r d x r t ) : e e _ c e o n a a a e _ s o x s i o l p o t p t x t t k w A A t p n p _ e r e p e p o e o N N o p e u ) m e s a k n r D D n u , s a r d ) n e s d s t e l e d n _ _ n t e , f d i t i s i c o o ) u , z u n t = n o k t l e r o 6 p u c e o l e d n t t 0 u n l n k _ v , h o f 0 t t i s e r a q r p u 0 n _ { n e l u z e - l ) \u003c i i f s s _ e e a 3 l = c n a _ u m r r d a p i o l e y o i c 1 l u t u t t n o 2 t h t ) r + i g n c f p i n . t o \u003c u u c s f L e m = l t s c e o x p n , } o r c t l 3 e p e k e 5 s m e n w x 0 s o ) c i i 0 , d e n t e d y r l c o e _ a w k l u l s e e s l y v e s w a d o n ) r c d e s , p r e c i s i o n , g r a d e } Model Routing as a Design Pattern The routing in Phase 3.5 deserves explicit attention because the temptation is to use a single, large managed API model for everything.\nThe routing logic operates on three signals simultaneously: query word count, presence of clinical complexity keywords (contraindication, pathophysiology, differential, prognosis, etiology), and assembled token count. Only when all three signals indicate a simple query does the pipeline route to the lighter model. Clinical complexity keywords act as an explicit vocabulary gate. Terms like these indicate the query requires multi-step clinical reasoning that smaller models handle poorly.\nOn cost: routing simple queries to an 8B model versus a 70B model produces roughly 10x cost reduction on those calls. At query volume, this is significant.\nOn the inference backend question: managed API models like Claude 3.5 Haiku and GPT-4o-mini are highly capable and convenient. For deployments where all patient context is fully de-identified before query time, they are a legitimate option and they eliminate the operational burden of running your own inference infrastructure.\nThe constraint appears when raw patient data flows through the query. In that case, the query payload (containing patient context assembled from retrieved chunks) leaves your network boundary on every API call. Whether this is acceptable depends on your organization’s data processing agreements and regulatory position, not on a blanket architectural rule.\nFor deployments that require patient data to stay on-premises or within a private VPC, open-weight models served via vLLM or Ollama are the right path. Both runtimes support llama-3-8b and llama-3.3-70b class models, give you full control over the inference stack, and eliminate per-token API costs at the expense of GPU infrastructure overhead. The capability gap between open-weight and frontier closed models on structured clinical reasoning over retrieved context has narrowed significantly in the past 18 months. This trade-off is more favorable than it was.\nNote: Groq is a cloud inference API backed by proprietary LPU hardware. It is not self-hostable. Using the Groq API routes your payloads through Groq’s infrastructure, which carries the same data boundary considerations as any other managed API.\nScaling the Architecture When a clinical RAG system grows beyond a single-tenant deployment or a single institution’s document volume, three components need to be re-evaluated:\nVector storage: FAISS is a local, in-process index. It does not support horizontal scaling, concurrent writes from multiple ingestion workers, or filtered search across metadata fields without a full scan. Migrating to a distributed vector database (Qdrant or Milvus) enables sharded indexing, filtered retrieval by document type or department, and multi-node query distribution. The Parent-Child chunking pattern transfers directly; only the storage backend changes.\nAsynchronous observability: Synchronous LLM-as-Judge evaluation on the main query thread adds 300-400ms to every response. Under concurrent load, this becomes a bottleneck. The correct pattern is to decouple evaluation entirely: return the primary response immediately, publish the evaluation job to a task queue (Celery with Redis as broker), and let async workers compute and store scores in a separate audit log. Clinicians get answers at full speed. Quality monitoring runs continuously without blocking.\nDomain-adapted embeddings: all-MiniLM-L6-v2 was trained on general text. Its embedding space underrepresents rare disease terminology, genetic condition nomenclature, and highly specific procedural codes. Parent-child chunking reduces the impact of vector collapse but does not resolve the root issue: the embedding model was not trained on clinical language. Swapping to ClinicalBERT or a BioBERT variant inherently sharpens the embedding space for clinical entities. This raises retrieval precision on long-tail medical queries without any changes to chunking or retrieval logic.\nWhat This Architecture Does Not Solve Index staleness after guideline updates. When a clinical protocol or drug formulary is revised, the superseded version’s vectors must be explicitly removed from the index. Cache invalidation on new uploads handles the immediate session, but it does not implement version diffing of updated guideline documents. A production system needs an explicit document lifecycle policy, tracked via a document registry, that marks old versions as deprecated and removes their chunk vectors from the index before they serve stale advice.\nEvaluation latency under concurrent load. Addressed in the scaling section above, but worth stating directly: synchronous evaluation is an architectural constraint, not just a performance issue. Under load, it creates head-of-line blocking on the query path. Async evaluation is not optional at scale.\nConclusion Naive RAG fails in healthcare at four distinct structural points. Ingestion silently drops non-digital records. Fixed-size chunking severs critical clinical entities and causes vector collapse. Similarity-ordered retrieval buries high-signal context where LLM attention is weakest. Manual evaluation gives engineers no signal until degradation is already severe.\nThe production design patterns that address these failures are: dual-layer adaptive OCR; parent-child chunking with entity-level retrieval and context-level generation; cross-encoder reranking to enforce relevance ordering before context assembly; and deterministic LLM-as-Judge scoring at temperature=0 after every generation.\nThese components form a stateful pipeline where failure at any stage propagates forward. A silently discarded ingestion page produces no child chunk, no parent context, no retrieved evidence, and ultimately a faithfulness score of zero. The observability at the end of the pipeline is only useful when the data integrity at the beginning is guaranteed.\nRAG in healthcare is a systems engineering problem. Every component owns a failure mode. Every failure mode has a concrete fix. There is no shortcut past any of them.\n",
+  "wordCount" : "4039",
+  "inLanguage": "en",
+  "datePublished": "2026-05-28T14:30:00+05:30",
+  "dateModified": "2026-05-28T14:30:00+05:30",
+  "author":{
+    "@type": "Person",
+    "name": "Devesh Nath Jha"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "https://deveshnathjha.github.io/posts/why-naive-rag-fails-healthcare/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Devesh Nath Jha",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://deveshnathjha.github.io/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="header-nav">
+        <div class="logo">
+            <a href="https://deveshnathjha.github.io/" accesskey="h" title="Devesh Nath Jha (Alt + H)">Devesh Nath Jha</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" class="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg class="moon" xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg class="sun" xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu" class="menu">
+        </ul>
+    </nav>
+</header>
+<main class="main">
+
+<article class="post-single">
+  <header class="post-header">
+    
+    <h1 class="post-title entry-hint-parent">
+      Why Naive RAG Fails in Healthcare and What Matters in Clinical RAG
+    </h1>
+    <div class="post-meta">
+
+<span title='2026-05-28 14:30:00 +0530 IST'>May 28, 2026</span>&nbsp;·&nbsp;<span>19 min</span>&nbsp;·&nbsp;<span>Devesh Nath Jha</span>
+
+</div>
+  </header> <details class="toc" >
+    <summary accesskey="c" title="(Alt + C)">
+        <span class="title">Table of Contents</span>
+    </summary>
+
+    <div class="inner"><ul>
+            <li>
+                <a href="#the-data-problem-comes-before-the-model-problem" aria-label="The Data Problem Comes Before the Model Problem">The Data Problem Comes Before the Model Problem</a></li>
+            <li>
+                <a href="#failure-mode-1-ingestion-collapse-on-non-digital-records" aria-label="Failure Mode 1: Ingestion Collapse on Non-Digital Records">Failure Mode 1: Ingestion Collapse on Non-Digital Records</a><ul>
+                    
+            <li>
+                <a href="#what-naive-systems-do" aria-label="What Naive Systems Do">What Naive Systems Do</a></li>
+            <li>
+                <a href="#the-correct-architecture-dual-layer-ocr" aria-label="The Correct Architecture: Dual-Layer OCR">The Correct Architecture: Dual-Layer OCR</a></li>
+            <li>
+                <a href="#cloud-ocr-vs-local-pipeline-choosing-the-right-default" aria-label="Cloud OCR vs. Local Pipeline: Choosing the Right Default">Cloud OCR vs. Local Pipeline: Choosing the Right Default</a></li></ul>
+            </li>
+            <li>
+                <a href="#failure-mode-2-vector-collapse-on-clinical-entities" aria-label="Failure Mode 2: Vector Collapse on Clinical Entities">Failure Mode 2: Vector Collapse on Clinical Entities</a><ul>
+                    
+            <li>
+                <a href="#what-naive-systems-do-1" aria-label="What Naive Systems Do">What Naive Systems Do</a></li>
+            <li>
+                <a href="#the-correct-architecture-parent-child-chunking" aria-label="The Correct Architecture: Parent-Child Chunking">The Correct Architecture: Parent-Child Chunking</a></li></ul>
+            </li>
+            <li>
+                <a href="#failure-mode-3-the-lost-in-the-middle-problem" aria-label="Failure Mode 3: The Lost-in-the-Middle Problem">Failure Mode 3: The Lost-in-the-Middle Problem</a><ul>
+                    
+            <li>
+                <a href="#what-naive-systems-do-2" aria-label="What Naive Systems Do">What Naive Systems Do</a></li>
+            <li>
+                <a href="#the-correct-architecture-cross-encoder-reranking" aria-label="The Correct Architecture: Cross-Encoder Reranking">The Correct Architecture: Cross-Encoder Reranking</a></li></ul>
+            </li>
+            <li>
+                <a href="#failure-mode-4-subjective-evaluation-in-a-zero-tolerance-domain" aria-label="Failure Mode 4: Subjective Evaluation in a Zero-Tolerance Domain">Failure Mode 4: Subjective Evaluation in a Zero-Tolerance Domain</a><ul>
+                    
+            <li>
+                <a href="#what-naive-systems-do-3" aria-label="What Naive Systems Do">What Naive Systems Do</a></li>
+            <li>
+                <a href="#the-correct-architecture-deterministic-llm-as-judge" aria-label="The Correct Architecture: Deterministic LLM-as-Judge">The Correct Architecture: Deterministic LLM-as-Judge</a></li></ul>
+            </li>
+            <li>
+                <a href="#standard-production-execution-trace" aria-label="Standard Production Execution Trace">Standard Production Execution Trace</a><ul>
+                    
+            <li>
+                <a href="#model-routing-as-a-design-pattern" aria-label="Model Routing as a Design Pattern">Model Routing as a Design Pattern</a></li></ul>
+            </li>
+            <li>
+                <a href="#scaling-the-architecture" aria-label="Scaling the Architecture">Scaling the Architecture</a></li>
+            <li>
+                <a href="#what-this-architecture-does-not-solve" aria-label="What This Architecture Does Not Solve">What This Architecture Does Not Solve</a></li>
+            <li>
+                <a href="#conclusion" aria-label="Conclusion">Conclusion</a>
+            </li>
+        </ul>
+    </div>
+</details>
+
+  <div class="post-content md-content"><p>In a sandbox, you load a handful of clean PDFs, slice them at 512 tokens, write vectors to a local FAISS index, and wire the components together. The outputs look reasonable. In a production clinical deployment, that same architecture breaks before a single query reaches the model. Nothing in the logs tells you where.</p>
+<p>This post documents four concrete failure modes that appear in clinical RAG systems, the production design patterns that address each one, and the trade-offs behind every decision. The document types a production clinical system must handle include typed clinical PDFs, scanned patient records, faxed referral letters, structured laboratory exports, and medical guideline documents with complex tabular layouts.</p>
+<hr>
+<h2 id="the-data-problem-comes-before-the-model-problem">The Data Problem Comes Before the Model Problem<a hidden class="anchor" aria-hidden="true" href="#the-data-problem-comes-before-the-model-problem">#</a></h2>
+<p>Every failure mode discussed below originates from the same root cause: the data environment in healthcare is hostile by default.</p>
+<p>Clinical information is split across hospitals, outpatient clinics, radiology systems, and insurance platforms. None of these systems share a common format. A patient&rsquo;s primary diagnosis may sit in a typed PDF at one facility, their comorbidity list in a scanned fax from another, and their lab values in an Excel export from a third. This is not an edge case. It is the standard operational reality.</p>
+<p>The direct engineering implication: no amount of model quality compensates for incomplete indexing. A state-of-the-art LLM reasoning over a contaminated or partial vector index will produce confident, plausible, and clinically wrong answers. The model has no visibility into what was silently dropped at ingestion. It can only reason over what the retriever surfaces.</p>
+<p>Every architectural decision in a clinical RAG system must be evaluated against this constraint first.</p>
+<hr>
+<h2 id="failure-mode-1-ingestion-collapse-on-non-digital-records">Failure Mode 1: Ingestion Collapse on Non-Digital Records<a hidden class="anchor" aria-hidden="true" href="#failure-mode-1-ingestion-collapse-on-non-digital-records">#</a></h2>
+<h3 id="what-naive-systems-do">What Naive Systems Do<a hidden class="anchor" aria-hidden="true" href="#what-naive-systems-do">#</a></h3>
+<p>Standard PDF parsing libraries (<code>pdfplumber</code>, <code>PyPDF2</code>, LangChain&rsquo;s default <code>PyPDFLoader</code>) extract text from a PDF&rsquo;s content stream. When that stream is absent, they return an empty string. No exception is raised. The page counter increments. The embedding call receives an empty string and encodes it into a near-zero vector that is written into the index.</p>
+<p>Clinical records routinely contain pages with no selectable text layer: scanned referral letters, photographed pathology reports, faxed discharge summaries, and legacy records digitized at low resolution. At scale, every one of these pages becomes a silent void in the index. A clinician querying for a patient&rsquo;s prior surgical history may receive a &ldquo;no relevant information found&rdquo; response precisely because that history lived on a scanned page the ingestion pipeline discarded without logging anything.</p>
+<h3 id="the-correct-architecture-dual-layer-ocr">The Correct Architecture: Dual-Layer OCR<a hidden class="anchor" aria-hidden="true" href="#the-correct-architecture-dual-layer-ocr">#</a></h3>
+<p>Production ingestion pipelines for clinical documents require a two-stage extraction strategy.</p>
+<p><strong>Stage 1 (PyMuPDF / fitz):</strong> Process every page with PyMuPDF first. It is fast, handles digital PDFs with high fidelity, preserves reading order, and correctly parses multi-column clinical layouts that simpler parsers scramble.</p>
+<p><strong>Stage 2 (Adaptive EasyOCR Fallback):</strong> When PyMuPDF returns a blank result, the pipeline rasterizes the page to an image and passes it through EasyOCR. A single retry is not enough. An adaptive DPI loop is necessary: render at 2x DPI first, and if the result is still insufficient, re-render at 3x DPI. Scanned documents arrive at different source resolutions and the pipeline must account for that.</p>
+<p>Structured data from CSV and Excel files is a separate case. Parse each row independently as its own sentence before passing it to the chunking stage.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># Dual-layer ingestion pattern</span>
+</span></span><span style="display:flex;"><span>page_text <span style="color:#f92672">=</span> extract_with_pymupdf(page)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> <span style="color:#f92672">not</span> page_text<span style="color:#f92672">.</span>strip():
+</span></span><span style="display:flex;"><span>    image <span style="color:#f92672">=</span> rasterize_page(page, dpi<span style="color:#f92672">=</span><span style="color:#ae81ff">200</span>)
+</span></span><span style="display:flex;"><span>    page_text <span style="color:#f92672">=</span> run_easyocr(image)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#f92672">not</span> page_text<span style="color:#f92672">.</span>strip():
+</span></span><span style="display:flex;"><span>        image <span style="color:#f92672">=</span> rasterize_page(page, dpi<span style="color:#f92672">=</span><span style="color:#ae81ff">300</span>)  <span style="color:#75715e"># Adaptive retry</span>
+</span></span><span style="display:flex;"><span>        page_text <span style="color:#f92672">=</span> run_easyocr(image)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Flag the page, never silently discard it</span>
+</span></span></code></pre></div><p>Every chunk produced from an OCR-processed page should carry an <code>ocr_used</code> boolean in its metadata. This single field makes ingestion quality observable downstream. When a faithfulness score drops, you can immediately determine whether the source content was digitally extracted or OCR-recovered.</p>
+<h3 id="cloud-ocr-vs-local-pipeline-choosing-the-right-default">Cloud OCR vs. Local Pipeline: Choosing the Right Default<a hidden class="anchor" aria-hidden="true" href="#cloud-ocr-vs-local-pipeline-choosing-the-right-default">#</a></h3>
+<p>AWS Textract and Google Cloud Document AI are mature, accurate, and significantly easier to operate at scale than a local OCR stack. For many deployments, they are the right choice.</p>
+<p>The decision point is data sensitivity. When documents contain identifiable patient information, routing them through a managed cloud OCR service means that data traverses a third-party network boundary on every ingestion call. For deployments bound by strict HIPAA controls or national data residency requirements, this may be a non-starter. Not because cloud is architecturally inferior, but because the regulatory context does not permit it.</p>
+<p>For those cases, a local pipeline (PyMuPDF + EasyOCR) provides a self-contained extraction layer with zero external data exposure. The trade-off is real: local EasyOCR requires GPU resources for production throughput, and its accuracy on highly degraded handwritten records does not match Textract&rsquo;s. It also requires your team to own the operational maintenance.</p>
+<p>The practical guidance: use cloud OCR when data governance permits it and you want lower operational overhead. Use a local pipeline when data residency is non-negotiable or when you need predictable per-document costs at high ingestion volume. Both are valid. The dual-layer fallback pattern works the same way regardless of which extraction backend you plug in behind it.</p>
+<hr>
+<h2 id="failure-mode-2-vector-collapse-on-clinical-entities">Failure Mode 2: Vector Collapse on Clinical Entities<a hidden class="anchor" aria-hidden="true" href="#failure-mode-2-vector-collapse-on-clinical-entities">#</a></h2>
+<h3 id="what-naive-systems-do-1">What Naive Systems Do<a hidden class="anchor" aria-hidden="true" href="#what-naive-systems-do-1">#</a></h3>
+<p>Dense embedding models like <code>all-MiniLM-L6-v2</code> (384 dimensions) compress the full semantic content of a text span into a single vector through mean pooling over token representations. This compression is not lossless. It produces a weighted average of the tokens in the span.</p>
+<p>For general-domain text, this works. For clinical text, it breaks in a specific and damaging way.</p>
+<p>Consider this sentence: <em>&ldquo;Patient presents with Type 2 Diabetes Mellitus (ICD-10: E11.9), hypertensive crisis (ICD-10: I16.0), and early-stage chronic kidney disease (ICD-10: N18.3).&rdquo;</em></p>
+<p>A fixed-size chunker at 512 tokens will, with high probability, split this across a chunk boundary. The ICD-10 code gets separated from its qualifying condition. The resulting chunk contains &ldquo;hypertensive crisis&rdquo; as its dominant semantic signal. The vector is shaped primarily by the high-frequency clinical term &ldquo;hypertension.&rdquo; The code <code>I16.0</code>, which specifically distinguishes a hypertensive crisis from chronic hypertension, is averaged out. Its weight in the final embedding is negligible.</p>
+<p>This is vector collapse. Rare but diagnostically critical entities (specific comorbidities, drug contraindication codes, rare genetic markers) get overwhelmed by high-frequency surrounding terms. A query for &ldquo;contraindicated drugs in CKD stage 3&rdquo; retrieves chunks that are thematically adjacent to kidney disease, not the chunks that encode stage 3 specifically. The retriever returns the wrong context. The model reasons over it confidently.</p>
+<h3 id="the-correct-architecture-parent-child-chunking">The Correct Architecture: Parent-Child Chunking<a hidden class="anchor" aria-hidden="true" href="#the-correct-architecture-parent-child-chunking">#</a></h3>
+<p>The fix is architectural: separate the retrieval unit from the generation unit.</p>
+<p><strong>Child chunks</strong> are small (400 characters, 50-char overlap). Their size is calibrated to contain a single clinical statement: one diagnosis with its ICD code, one medication with its dosage constraint. These are the only units indexed into the vector store. Embedding a small, focused span reduces averaging and preserves the signal of rare entities.</p>
+<p><strong>Parent chunks</strong> are larger (1500 characters, 100-char overlap) and stored in a separate key-value structure. Every child chunk carries a <code>parent_id</code> in its metadata pointing to its enclosing parent.</p>
+<p><strong>Retrieval expansion</strong> is the critical step. When the vector store returns the top-k child chunks, the pipeline does not pass those children to the LLM. It resolves each <code>parent_id</code> and passes the full parent chunk instead. The model receives complete clinical context. The retriever operated on precise entity-level spans.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># Parent-Child retrieval expansion</span>
+</span></span><span style="display:flex;"><span>child_results <span style="color:#f92672">=</span> faiss_index<span style="color:#f92672">.</span>similarity_search(query, k<span style="color:#f92672">=</span><span style="color:#ae81ff">10</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>contexts_for_llm <span style="color:#f92672">=</span> []
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> child <span style="color:#f92672">in</span> child_results:
+</span></span><span style="display:flex;"><span>    parent_id <span style="color:#f92672">=</span> child<span style="color:#f92672">.</span>metadata[<span style="color:#e6db74">&#34;parent_id&#34;</span>]
+</span></span><span style="display:flex;"><span>    parent_chunk <span style="color:#f92672">=</span> parent_store[parent_id]  <span style="color:#75715e"># Full 1500-char context</span>
+</span></span><span style="display:flex;"><span>    contexts_for_llm<span style="color:#f92672">.</span>append(parent_chunk)
+</span></span></code></pre></div><p>Fixed-size chunking forces a choice between retrieval precision and generation context. Parent-child chunking removes that constraint: the retriever operates on small spans, the generator receives large ones.</p>
+<hr>
+<h2 id="failure-mode-3-the-lost-in-the-middle-problem">Failure Mode 3: The Lost-in-the-Middle Problem<a hidden class="anchor" aria-hidden="true" href="#failure-mode-3-the-lost-in-the-middle-problem">#</a></h2>
+<h3 id="what-naive-systems-do-2">What Naive Systems Do<a hidden class="anchor" aria-hidden="true" href="#what-naive-systems-do-2">#</a></h3>
+<p>Retrieving top-k chunks by cosine similarity and concatenating them in ranked order before passing to the LLM introduces a retrieval ordering problem that is independent of chunk quality.</p>
+<p>LLMs do not attend uniformly across a context window. Transformer attention patterns show consistent primacy and recency bias: the model gives disproportionate weight to content at the start and end of the prompt, with reduced attention to content in the middle. If the most clinically relevant retrieved passage ends up in the middle of a large assembled context block, the model underweights it during generation. The response looks grounded but has effectively ignored the most relevant evidence.</p>
+<p>There is a second, related problem. Cosine similarity measures geometric proximity in embedding space, not clinical relevance. A chunk about general diabetes management may be vectorially closer to a query than a chunk containing a specific drug contraindication, simply because the former&rsquo;s language is more common in the embedding model&rsquo;s training distribution. Bi-encoder retrieval cannot distinguish between these two cases.</p>
+<h3 id="the-correct-architecture-cross-encoder-reranking">The Correct Architecture: Cross-Encoder Reranking<a hidden class="anchor" aria-hidden="true" href="#the-correct-architecture-cross-encoder-reranking">#</a></h3>
+<p>After bi-encoder retrieval, a cross-encoder reranking step is necessary before context assembly.</p>
+<p>Bi-encoders are fast because they compare pre-computed vectors independently. Cross-encoders process the query and each candidate passage jointly, attending to the direct relationship between them. This joint attention is what makes them superior for relevance scoring. They evaluate the specific query-passage relationship, not just embedding proximity.</p>
+<p>FlashRank is a lightweight cross-encoder designed for fast reranking without significant latency overhead. The retrieval sequence becomes:</p>
+
+
+
+<div class="goat svg-container ">
+  
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      font-family="Menlo,Lucida Console,monospace"
+      
+        viewBox="0 0 760 25"
+      >
+      <g transform='translate(8,16)'>
+<path d='M 200,0 L 208,0' fill='none' stroke='currentColor'></path>
+<path d='M 472,0 L 480,0' fill='none' stroke='currentColor'></path>
+<path d='M 544,0 L 552,0' fill='none' stroke='currentColor'></path>
+<path d='M 704,0 L 712,0' fill='none' stroke='currentColor'></path>
+<polygon points='216.000000,0.000000 204.000000,-5.600000 204.000000,5.600000' fill='currentColor' transform='rotate(0.000000, 208.000000, 0.000000)'></polygon>
+<polygon points='488.000000,0.000000 476.000000,-5.600000 476.000000,5.600000' fill='currentColor' transform='rotate(0.000000, 480.000000, 0.000000)'></polygon>
+<polygon points='560.000000,0.000000 548.000000,-5.600000 548.000000,5.600000' fill='currentColor' transform='rotate(0.000000, 552.000000, 0.000000)'></polygon>
+<polygon points='720.000000,0.000000 708.000000,-5.600000 708.000000,5.600000' fill='currentColor' transform='rotate(0.000000, 712.000000, 0.000000)'></polygon>
+<text text-anchor='middle' x='0' y='4' fill='currentColor' style='font-size:1em'>F</text>
+<text text-anchor='middle' x='8' y='4' fill='currentColor' style='font-size:1em'>A</text>
+<text text-anchor='middle' x='16' y='4' fill='currentColor' style='font-size:1em'>I</text>
+<text text-anchor='middle' x='24' y='4' fill='currentColor' style='font-size:1em'>S</text>
+<text text-anchor='middle' x='32' y='4' fill='currentColor' style='font-size:1em'>S</text>
+<text text-anchor='middle' x='48' y='4' fill='currentColor' style='font-size:1em'>(</text>
+<text text-anchor='middle' x='56' y='4' fill='currentColor' style='font-size:1em'>b</text>
+<text text-anchor='middle' x='64' y='4' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='72' y='4' fill='currentColor' style='font-size:1em'>-</text>
+<text text-anchor='middle' x='80' y='4' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='88' y='4' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='96' y='4' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='104' y='4' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='112' y='4' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='120' y='4' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='128' y='4' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='136' y='4' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='152' y='4' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='160' y='4' fill='currentColor' style='font-size:1em'>=</text>
+<text text-anchor='middle' x='168' y='4' fill='currentColor' style='font-size:1em'>1</text>
+<text text-anchor='middle' x='176' y='4' fill='currentColor' style='font-size:1em'>0</text>
+<text text-anchor='middle' x='184' y='4' fill='currentColor' style='font-size:1em'>)</text>
+<text text-anchor='middle' x='224' y='4' fill='currentColor' style='font-size:1em'>F</text>
+<text text-anchor='middle' x='232' y='4' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='240' y='4' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='248' y='4' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='256' y='4' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='264' y='4' fill='currentColor' style='font-size:1em'>R</text>
+<text text-anchor='middle' x='272' y='4' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='280' y='4' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='288' y='4' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='304' y='4' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='312' y='4' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='320' y='4' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='328' y='4' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='336' y='4' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='344' y='4' fill='currentColor' style='font-size:1em'>-</text>
+<text text-anchor='middle' x='352' y='4' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='360' y='4' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='368' y='4' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='376' y='4' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='384' y='4' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='392' y='4' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='400' y='4' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='416' y='4' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='424' y='4' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='432' y='4' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='440' y='4' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='448' y='4' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='456' y='4' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='496' y='4' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='504' y='4' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='512' y='4' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='520' y='4' fill='currentColor' style='font-size:1em'>-</text>
+<text text-anchor='middle' x='528' y='4' fill='currentColor' style='font-size:1em'>3</text>
+<text text-anchor='middle' x='568' y='4' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='576' y='4' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='584' y='4' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='592' y='4' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='600' y='4' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='608' y='4' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='624' y='4' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='632' y='4' fill='currentColor' style='font-size:1em'>x</text>
+<text text-anchor='middle' x='640' y='4' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='648' y='4' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='656' y='4' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='664' y='4' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='672' y='4' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='680' y='4' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='688' y='4' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='728' y='4' fill='currentColor' style='font-size:1em'>L</text>
+<text text-anchor='middle' x='736' y='4' fill='currentColor' style='font-size:1em'>L</text>
+<text text-anchor='middle' x='744' y='4' fill='currentColor' style='font-size:1em'>M</text>
+</g>
+
+    </svg>
+  
+</div>
+<p>The top-3 reranked passages are assembled with the highest-relevance passage first. This directly counters the lost-in-the-middle effect by placing the highest-signal context at the position of maximum LLM attention.</p>
+<p>The cap at top-3 is deliberate. Every token in the prompt has a cost. Token counting with <code>tiktoken</code> (cl100k_base) enforces a hard <code>MAX_CONTEXT_TOKENS = 6000</code> limit, and the pipeline drops the least relevant chunks first. Fewer, higher-quality chunks consistently outperform a larger, noisier context block on both quality metrics (nDCG, MRR) and inference cost.</p>
+<p>In air-gapped hospital environments where the cross-encoder model cannot be loaded, the pipeline should fall back to raw bi-encoder scores rather than crashing. Retrieval quality degrades predictably and the system stays functional.</p>
+<hr>
+<h2 id="failure-mode-4-subjective-evaluation-in-a-zero-tolerance-domain">Failure Mode 4: Subjective Evaluation in a Zero-Tolerance Domain<a hidden class="anchor" aria-hidden="true" href="#failure-mode-4-subjective-evaluation-in-a-zero-tolerance-domain">#</a></h2>
+<h3 id="what-naive-systems-do-3">What Naive Systems Do<a hidden class="anchor" aria-hidden="true" href="#what-naive-systems-do-3">#</a></h3>
+<p>Manual review of model outputs is the default evaluation method for most RAG prototypes. In a general-purpose assistant, it is a reasonable starting point. In a clinical system, it is inadequate as the primary quality signal.</p>
+<p>The core problem is not speed. Manual review is non-deterministic, non-reproducible, and provides no signal to the pipeline itself. When output quality begins degrading (a common symptom of index drift after document ingestion events), manual review will not detect it until the degradation is severe. By that point, the number of queries that received degraded output is unknown.</p>
+<p>More critically, manual review cannot distinguish between two distinct failure causes. The generative model may have introduced facts not present in any retrieved chunk (faithfulness failure), or the retriever may have surfaced wrong chunks and the model reasoned correctly over incorrect context (retrieval failure). These require different remediation. Without per-query diagnostics that separate these two failure modes, engineers are guessing at root cause.</p>
+<h3 id="the-correct-architecture-deterministic-llm-as-judge">The Correct Architecture: Deterministic LLM-as-Judge<a hidden class="anchor" aria-hidden="true" href="#the-correct-architecture-deterministic-llm-as-judge">#</a></h3>
+<p>Every query response in a production clinical RAG system should be scored by an automated judge before the result is stored or returned to the caller.</p>
+<p>The judge is a separate, lightweight LLM call using a small model (<code>llama-3-8b-8192</code>) at <code>temperature=0</code>. Temperature zero is not optional. It makes the judge deterministic. For the same inputs, the judge will always return the same scores, which is a prerequisite for treating evaluation output as a metric rather than an opinion.</p>
+<p>A single judge call produces three scores on [0, 1]:</p>
+<ul>
+<li><strong>Faithfulness:</strong> Does the answer use only information present in the retrieved context? A low score is a hallucination signal.</li>
+<li><strong>Answer Relevance:</strong> Does the answer address what was asked? A low score points to retrieval or prompt construction failure.</li>
+<li><strong>Context Precision:</strong> Did the retrieved passages contain the information needed? This is the retriever&rsquo;s direct quality signal.</li>
+</ul>
+<p>The judge prompt must explicitly account for medical synonymy. &ldquo;Fracture&rdquo; and &ldquo;broken bone&rdquo; are semantically equivalent, and a judge that penalizes this substitution will produce false faithfulness failures. This is a clinical domain-specific prompt engineering requirement.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="color:#75715e"># Composite grading logic</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># GRADE_THRESHOLDS = {&#34;A&#34;: 0.85, &#34;B&#34;: 0.70, &#34;C&#34;: 0.50}</span>
+</span></span><span style="display:flex;"><span>composite <span style="color:#f92672">=</span> (faithfulness <span style="color:#f92672">+</span> answer_relevance <span style="color:#f92672">+</span> context_precision) <span style="color:#f92672">/</span> <span style="color:#ae81ff">3</span>
+</span></span><span style="display:flex;"><span>grade <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;A&#34;</span> <span style="color:#66d9ef">if</span> composite <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0.85</span> <span style="color:#66d9ef">else</span> <span style="color:#e6db74">&#34;B&#34;</span> <span style="color:#66d9ef">if</span> composite <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0.70</span> <span style="color:#66d9ef">else</span> <span style="color:#e6db74">&#34;C&#34;</span> <span style="color:#66d9ef">if</span> composite <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0.50</span> <span style="color:#66d9ef">else</span> <span style="color:#e6db74">&#34;F&#34;</span>
+</span></span></code></pre></div><p>When a response grades C or F, the telemetry on that query includes the exact chunk IDs retrieved, reranker scores, index version, and OCR metadata for the source pages. An engineer can trace a faithfulness failure back to the specific chunk, and then to the ingestion event that produced it.</p>
+<p>The judge must never block the main query path. Any failure (timeout, parse error, unexpected output) should return null scores and let the primary response through. At approximately $0.000025 per evaluation call, this is not a meaningful cost constraint.</p>
+<hr>
+<h2 id="standard-production-execution-trace">Standard Production Execution Trace<a hidden class="anchor" aria-hidden="true" href="#standard-production-execution-trace">#</a></h2>
+<p>A production clinical RAG <code>get_response()</code> should execute in this sequence. Each phase should be independently timed and logged.</p>
+
+
+
+<div class="goat svg-container ">
+  
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      font-family="Menlo,Lucida Console,monospace"
+      
+        viewBox="0 0 792 505"
+      >
+      <g transform='translate(8,16)'>
+<path d='M 88,16 L 96,16' fill='none' stroke='currentColor'></path>
+<path d='M 88,32 L 96,32' fill='none' stroke='currentColor'></path>
+<path d='M 88,80 L 96,80' fill='none' stroke='currentColor'></path>
+<path d='M 400,112 L 408,112' fill='none' stroke='currentColor'></path>
+<path d='M 328,144 L 336,144' fill='none' stroke='currentColor'></path>
+<path d='M 88,192 L 96,192' fill='none' stroke='currentColor'></path>
+<path d='M 88,272 L 96,272' fill='none' stroke='currentColor'></path>
+<path d='M 88,320 L 96,320' fill='none' stroke='currentColor'></path>
+<path d='M 240,352 L 248,352' fill='none' stroke='currentColor'></path>
+<path d='M 416,384 L 424,384' fill='none' stroke='currentColor'></path>
+<polygon points='104.000000,16.000000 92.000000,10.400000 92.000000,21.600000' fill='currentColor' transform='rotate(0.000000, 96.000000, 16.000000)'></polygon>
+<polygon points='104.000000,32.000000 92.000000,26.400000 92.000000,37.599998' fill='currentColor' transform='rotate(0.000000, 96.000000, 32.000000)'></polygon>
+<polygon points='104.000000,80.000000 92.000000,74.400002 92.000000,85.599998' fill='currentColor' transform='rotate(0.000000, 96.000000, 80.000000)'></polygon>
+<polygon points='104.000000,192.000000 92.000000,186.399994 92.000000,197.600006' fill='currentColor' transform='rotate(0.000000, 96.000000, 192.000000)'></polygon>
+<polygon points='104.000000,272.000000 92.000000,266.399994 92.000000,277.600006' fill='currentColor' transform='rotate(0.000000, 96.000000, 272.000000)'></polygon>
+<polygon points='104.000000,320.000000 92.000000,314.399994 92.000000,325.600006' fill='currentColor' transform='rotate(0.000000, 96.000000, 320.000000)'></polygon>
+<polygon points='256.000000,352.000000 244.000000,346.399994 244.000000,357.600006' fill='currentColor' transform='rotate(0.000000, 248.000000, 352.000000)'></polygon>
+<polygon points='344.000000,144.000000 332.000000,138.399994 332.000000,149.600006' fill='currentColor' transform='rotate(0.000000, 336.000000, 144.000000)'></polygon>
+<polygon points='416.000000,112.000000 404.000000,106.400002 404.000000,117.599998' fill='currentColor' transform='rotate(0.000000, 408.000000, 112.000000)'></polygon>
+<polygon points='432.000000,384.000000 420.000000,378.399994 420.000000,389.600006' fill='currentColor' transform='rotate(0.000000, 424.000000, 384.000000)'></polygon>
+<text text-anchor='middle' x='0' y='4' fill='currentColor' style='font-size:1em'>P</text>
+<text text-anchor='middle' x='0' y='68' fill='currentColor' style='font-size:1em'>P</text>
+<text text-anchor='middle' x='0' y='116' fill='currentColor' style='font-size:1em'>P</text>
+<text text-anchor='middle' x='0' y='148' fill='currentColor' style='font-size:1em'>P</text>
+<text text-anchor='middle' x='0' y='180' fill='currentColor' style='font-size:1em'>P</text>
+<text text-anchor='middle' x='0' y='228' fill='currentColor' style='font-size:1em'>P</text>
+<text text-anchor='middle' x='0' y='260' fill='currentColor' style='font-size:1em'>P</text>
+<text text-anchor='middle' x='0' y='356' fill='currentColor' style='font-size:1em'>P</text>
+<text text-anchor='middle' x='0' y='388' fill='currentColor' style='font-size:1em'>P</text>
+<text text-anchor='middle' x='0' y='420' fill='currentColor' style='font-size:1em'>P</text>
+<text text-anchor='middle' x='0' y='452' fill='currentColor' style='font-size:1em'>P</text>
+<text text-anchor='middle' x='0' y='484' fill='currentColor' style='font-size:1em'>R</text>
+<text text-anchor='middle' x='8' y='4' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='8' y='68' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='8' y='116' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='8' y='148' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='8' y='180' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='8' y='228' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='8' y='260' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='8' y='356' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='8' y='388' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='8' y='420' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='8' y='452' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='8' y='484' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='16' y='4' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='16' y='68' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='16' y='116' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='16' y='148' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='16' y='180' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='16' y='228' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='16' y='260' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='16' y='356' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='16' y='388' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='16' y='420' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='16' y='452' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='16' y='484' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='24' y='4' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='24' y='68' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='24' y='116' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='24' y='148' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='24' y='180' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='24' y='228' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='24' y='260' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='24' y='356' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='24' y='388' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='24' y='420' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='24' y='452' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='24' y='484' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='32' y='4' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='32' y='68' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='32' y='116' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='32' y='148' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='32' y='180' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='32' y='228' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='32' y='260' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='32' y='356' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='32' y='388' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='32' y='420' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='32' y='452' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='32' y='484' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='40' y='484' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='48' y='4' fill='currentColor' style='font-size:1em'>0</text>
+<text text-anchor='middle' x='48' y='68' fill='currentColor' style='font-size:1em'>1</text>
+<text text-anchor='middle' x='48' y='116' fill='currentColor' style='font-size:1em'>2</text>
+<text text-anchor='middle' x='48' y='148' fill='currentColor' style='font-size:1em'>2</text>
+<text text-anchor='middle' x='48' y='180' fill='currentColor' style='font-size:1em'>2</text>
+<text text-anchor='middle' x='48' y='228' fill='currentColor' style='font-size:1em'>3</text>
+<text text-anchor='middle' x='48' y='260' fill='currentColor' style='font-size:1em'>3</text>
+<text text-anchor='middle' x='48' y='356' fill='currentColor' style='font-size:1em'>4</text>
+<text text-anchor='middle' x='48' y='388' fill='currentColor' style='font-size:1em'>5</text>
+<text text-anchor='middle' x='48' y='420' fill='currentColor' style='font-size:1em'>5</text>
+<text text-anchor='middle' x='48' y='452' fill='currentColor' style='font-size:1em'>6</text>
+<text text-anchor='middle' x='48' y='484' fill='currentColor' style='font-size:1em'>:</text>
+<text text-anchor='middle' x='56' y='4' fill='currentColor' style='font-size:1em'>:</text>
+<text text-anchor='middle' x='56' y='68' fill='currentColor' style='font-size:1em'>:</text>
+<text text-anchor='middle' x='56' y='116' fill='currentColor' style='font-size:1em'>:</text>
+<text text-anchor='middle' x='56' y='148' fill='currentColor' style='font-size:1em'>.</text>
+<text text-anchor='middle' x='56' y='180' fill='currentColor' style='font-size:1em'>.</text>
+<text text-anchor='middle' x='56' y='228' fill='currentColor' style='font-size:1em'>:</text>
+<text text-anchor='middle' x='56' y='260' fill='currentColor' style='font-size:1em'>.</text>
+<text text-anchor='middle' x='56' y='356' fill='currentColor' style='font-size:1em'>:</text>
+<text text-anchor='middle' x='56' y='388' fill='currentColor' style='font-size:1em'>:</text>
+<text text-anchor='middle' x='56' y='420' fill='currentColor' style='font-size:1em'>.</text>
+<text text-anchor='middle' x='56' y='452' fill='currentColor' style='font-size:1em'>:</text>
+<text text-anchor='middle' x='64' y='148' fill='currentColor' style='font-size:1em'>5</text>
+<text text-anchor='middle' x='64' y='180' fill='currentColor' style='font-size:1em'>6</text>
+<text text-anchor='middle' x='64' y='260' fill='currentColor' style='font-size:1em'>5</text>
+<text text-anchor='middle' x='64' y='420' fill='currentColor' style='font-size:1em'>5</text>
+<text text-anchor='middle' x='72' y='148' fill='currentColor' style='font-size:1em'>:</text>
+<text text-anchor='middle' x='72' y='180' fill='currentColor' style='font-size:1em'>:</text>
+<text text-anchor='middle' x='72' y='260' fill='currentColor' style='font-size:1em'>:</text>
+<text text-anchor='middle' x='72' y='420' fill='currentColor' style='font-size:1em'>:</text>
+<text text-anchor='middle' x='88' y='4' fill='currentColor' style='font-size:1em'>Q</text>
+<text text-anchor='middle' x='88' y='68' fill='currentColor' style='font-size:1em'>V</text>
+<text text-anchor='middle' x='88' y='116' fill='currentColor' style='font-size:1em'>C</text>
+<text text-anchor='middle' x='88' y='148' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='88' y='180' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='88' y='228' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='88' y='260' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='88' y='356' fill='currentColor' style='font-size:1em'>L</text>
+<text text-anchor='middle' x='88' y='388' fill='currentColor' style='font-size:1em'>J</text>
+<text text-anchor='middle' x='88' y='420' fill='currentColor' style='font-size:1em'>T</text>
+<text text-anchor='middle' x='88' y='452' fill='currentColor' style='font-size:1em'>Q</text>
+<text text-anchor='middle' x='88' y='484' fill='currentColor' style='font-size:1em'>{</text>
+<text text-anchor='middle' x='96' y='4' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='96' y='68' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='96' y='116' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='96' y='148' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='96' y='180' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='96' y='228' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='96' y='260' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='96' y='356' fill='currentColor' style='font-size:1em'>L</text>
+<text text-anchor='middle' x='96' y='388' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='96' y='420' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='96' y='452' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='96' y='484' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='104' y='4' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='104' y='68' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='104' y='116' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='104' y='148' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='104' y='180' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='104' y='228' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='104' y='260' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='104' y='356' fill='currentColor' style='font-size:1em'>M</text>
+<text text-anchor='middle' x='104' y='388' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='104' y='420' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='104' y='452' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='104' y='484' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='112' y='4' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='112' y='20' fill='currentColor' style='font-size:1em'>D</text>
+<text text-anchor='middle' x='112' y='36' fill='currentColor' style='font-size:1em'>1</text>
+<text text-anchor='middle' x='112' y='68' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='112' y='84' fill='currentColor' style='font-size:1em'>T</text>
+<text text-anchor='middle' x='112' y='116' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='112' y='148' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='112' y='180' fill='currentColor' style='font-size:1em'>m</text>
+<text text-anchor='middle' x='112' y='196' fill='currentColor' style='font-size:1em'>D</text>
+<text text-anchor='middle' x='112' y='228' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='112' y='260' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='112' y='276' fill='currentColor' style='font-size:1em'>R</text>
+<text text-anchor='middle' x='112' y='324' fill='currentColor' style='font-size:1em'>R</text>
+<text text-anchor='middle' x='112' y='356' fill='currentColor' style='font-size:1em'>.</text>
+<text text-anchor='middle' x='112' y='388' fill='currentColor' style='font-size:1em'>g</text>
+<text text-anchor='middle' x='112' y='420' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='112' y='452' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='112' y='484' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='120' y='4' fill='currentColor' style='font-size:1em'>y</text>
+<text text-anchor='middle' x='120' y='20' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='120' y='36' fill='currentColor' style='font-size:1em'>-</text>
+<text text-anchor='middle' x='120' y='68' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='120' y='84' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='120' y='116' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='120' y='148' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='120' y='180' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='120' y='196' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='120' y='228' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='120' y='260' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='120' y='276' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='120' y='324' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='120' y='356' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='120' y='388' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='120' y='420' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='120' y='452' fill='currentColor' style='font-size:1em'>y</text>
+<text text-anchor='middle' x='120' y='484' fill='currentColor' style='font-size:1em'>w</text>
+<text text-anchor='middle' x='128' y='4' fill='currentColor' style='font-size:1em'>C</text>
+<text text-anchor='middle' x='128' y='20' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='128' y='36' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='128' y='68' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='128' y='84' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='128' y='116' fill='currentColor' style='font-size:1em'>E</text>
+<text text-anchor='middle' x='128' y='148' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='128' y='180' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='128' y='196' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='128' y='228' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='128' y='260' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='128' y='276' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='128' y='324' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='128' y='356' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='128' y='388' fill='currentColor' style='font-size:1em'>.</text>
+<text text-anchor='middle' x='128' y='420' fill='currentColor' style='font-size:1em'>B</text>
+<text text-anchor='middle' x='128' y='452' fill='currentColor' style='font-size:1em'>C</text>
+<text text-anchor='middle' x='128' y='484' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='136' y='4' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='136' y='20' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='136' y='36' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='136' y='68' fill='currentColor' style='font-size:1em'>S</text>
+<text text-anchor='middle' x='136' y='84' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='136' y='116' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='136' y='148' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='136' y='180' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='136' y='196' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='136' y='228' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='136' y='260' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='136' y='276' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='136' y='324' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='136' y='356' fill='currentColor' style='font-size:1em'>v</text>
+<text text-anchor='middle' x='136' y='388' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='136' y='420' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='136' y='452' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='136' y='484' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='144' y='4' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='144' y='20' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='144' y='36' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='144' y='68' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='144' y='84' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='144' y='116' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='144' y='148' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='144' y='180' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='144' y='228' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='144' y='260' fill='currentColor' style='font-size:1em'>m</text>
+<text text-anchor='middle' x='144' y='276' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='144' y='324' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='144' y='356' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='144' y='388' fill='currentColor' style='font-size:1em'>v</text>
+<text text-anchor='middle' x='144' y='420' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='144' y='452' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='144' y='484' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='152' y='4' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='152' y='20' fill='currentColor' style='font-size:1em'>m</text>
+<text text-anchor='middle' x='152' y='36' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='152' y='68' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='152' y='84' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='152' y='116' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='152' y='148' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='152' y='180' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='152' y='196' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='152' y='228' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='152' y='260' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='152' y='356' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='152' y='388' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='152' y='420' fill='currentColor' style='font-size:1em'>g</text>
+<text text-anchor='middle' x='152' y='452' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='160' y='4' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='160' y='20' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='160' y='68' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='160' y='84' fill='currentColor' style='font-size:1em'>-</text>
+<text text-anchor='middle' x='160' y='116' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='160' y='148' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='160' y='180' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='160' y='196' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='160' y='228' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='160' y='260' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='160' y='276' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='160' y='324' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='160' y='356' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='160' y='388' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='160' y='420' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='160' y='452' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='160' y='484' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='168' y='4' fill='currentColor' style='font-size:1em'>.</text>
+<text text-anchor='middle' x='168' y='20' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='168' y='36' fill='currentColor' style='font-size:1em'>T</text>
+<text text-anchor='middle' x='168' y='68' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='168' y='84' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='168' y='116' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='168' y='148' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='168' y='180' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='168' y='196' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='168' y='228' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='168' y='260' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='168' y='276' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='168' y='324' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='168' y='356' fill='currentColor' style='font-size:1em'>(</text>
+<text text-anchor='middle' x='168' y='388' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='168' y='420' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='168' y='452' fill='currentColor' style='font-size:1em'>.</text>
+<text text-anchor='middle' x='168' y='484' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='176' y='4' fill='currentColor' style='font-size:1em'>g</text>
+<text text-anchor='middle' x='176' y='20' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='176' y='36' fill='currentColor' style='font-size:1em'>T</text>
+<text text-anchor='middle' x='176' y='68' fill='currentColor' style='font-size:1em'>.</text>
+<text text-anchor='middle' x='176' y='84' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='176' y='116' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='176' y='148' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='176' y='180' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='176' y='196' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='176' y='228' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='176' y='260' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='176' y='356' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='176' y='388' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='176' y='420' fill='currentColor' style='font-size:1em'>.</text>
+<text text-anchor='middle' x='176' y='452' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='176' y='484' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='184' y='4' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='184' y='20' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='184' y='36' fill='currentColor' style='font-size:1em'>L</text>
+<text text-anchor='middle' x='184' y='68' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='184' y='84' fill='currentColor' style='font-size:1em'>f</text>
+<text text-anchor='middle' x='184' y='116' fill='currentColor' style='font-size:1em'>.</text>
+<text text-anchor='middle' x='184' y='148' fill='currentColor' style='font-size:1em'>[</text>
+<text text-anchor='middle' x='184' y='180' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='184' y='196' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='184' y='228' fill='currentColor' style='font-size:1em'>(</text>
+<text text-anchor='middle' x='184' y='260' fill='currentColor' style='font-size:1em'>(</text>
+<text text-anchor='middle' x='184' y='276' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='184' y='324' fill='currentColor' style='font-size:1em'>f</text>
+<text text-anchor='middle' x='184' y='356' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='184' y='388' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='184' y='420' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='184' y='452' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='184' y='484' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='192' y='4' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='192' y='20' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='192' y='36' fill='currentColor' style='font-size:1em'>;</text>
+<text text-anchor='middle' x='192' y='68' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='192' y='84' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='192' y='116' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='192' y='148' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='192' y='180' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='192' y='196' fill='currentColor' style='font-size:1em'>-</text>
+<text text-anchor='middle' x='192' y='228' fill='currentColor' style='font-size:1em'>q</text>
+<text text-anchor='middle' x='192' y='260' fill='currentColor' style='font-size:1em'>q</text>
+<text text-anchor='middle' x='192' y='276' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='192' y='324' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='192' y='356' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='192' y='388' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='192' y='420' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='192' y='452' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='192' y='484' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='200' y='4' fill='currentColor' style='font-size:1em'>(</text>
+<text text-anchor='middle' x='200' y='20' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='200' y='68' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='200' y='116' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='200' y='148' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='200' y='180' fill='currentColor' style='font-size:1em'>b</text>
+<text text-anchor='middle' x='200' y='196' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='200' y='228' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='200' y='260' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='200' y='276' fill='currentColor' style='font-size:1em'>g</text>
+<text text-anchor='middle' x='200' y='324' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='200' y='356' fill='currentColor' style='font-size:1em'>m</text>
+<text text-anchor='middle' x='200' y='388' fill='currentColor' style='font-size:1em'>(</text>
+<text text-anchor='middle' x='200' y='420' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='200' y='452' fill='currentColor' style='font-size:1em'>(</text>
+<text text-anchor='middle' x='200' y='484' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='208' y='4' fill='currentColor' style='font-size:1em'>q</text>
+<text text-anchor='middle' x='208' y='20' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='208' y='36' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='208' y='68' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='208' y='84' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='208' y='116' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='208' y='148' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='208' y='180' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='208' y='196' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='208' y='228' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='208' y='260' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='208' y='276' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='208' y='324' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='208' y='356' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='208' y='388' fill='currentColor' style='font-size:1em'>q</text>
+<text text-anchor='middle' x='208' y='420' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='208' y='452' fill='currentColor' style='font-size:1em'>q</text>
+<text text-anchor='middle' x='208' y='484' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='216' y='4' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='216' y='36' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='216' y='68' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='216' y='84' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='216' y='116' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='216' y='148' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='216' y='180' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='216' y='196' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='216' y='228' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='216' y='260' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='216' y='276' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='216' y='356' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='216' y='388' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='216' y='420' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='216' y='452' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='216' y='484' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='224' y='4' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='224' y='20' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='224' y='36' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='224' y='68' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='224' y='84' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='224' y='116' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='224' y='148' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='224' y='180' fill='currentColor' style='font-size:1em'>g</text>
+<text text-anchor='middle' x='224' y='196' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='224' y='228' fill='currentColor' style='font-size:1em'>y</text>
+<text text-anchor='middle' x='224' y='260' fill='currentColor' style='font-size:1em'>y</text>
+<text text-anchor='middle' x='224' y='276' fill='currentColor' style='font-size:1em'>w</text>
+<text text-anchor='middle' x='224' y='324' fill='currentColor' style='font-size:1em'>m</text>
+<text text-anchor='middle' x='224' y='356' fill='currentColor' style='font-size:1em'>)</text>
+<text text-anchor='middle' x='224' y='388' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='224' y='420' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='224' y='452' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='232' y='4' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='232' y='20' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='232' y='36' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='232' y='68' fill='currentColor' style='font-size:1em'>(</text>
+<text text-anchor='middle' x='232' y='84' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='232' y='116' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='232' y='148' fill='currentColor' style='font-size:1em'>.</text>
+<text text-anchor='middle' x='232' y='180' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='232' y='196' fill='currentColor' style='font-size:1em'>v</text>
+<text text-anchor='middle' x='232' y='260' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='232' y='276' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='232' y='324' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='232' y='388' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='232' y='420' fill='currentColor' style='font-size:1em'>(</text>
+<text text-anchor='middle' x='232' y='452' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='232' y='484' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='240' y='4' fill='currentColor' style='font-size:1em'>y</text>
+<text text-anchor='middle' x='240' y='20' fill='currentColor' style='font-size:1em'>y</text>
+<text text-anchor='middle' x='240' y='36' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='240' y='68' fill='currentColor' style='font-size:1em'>q</text>
+<text text-anchor='middle' x='240' y='84' fill='currentColor' style='font-size:1em'>;</text>
+<text text-anchor='middle' x='240' y='116' fill='currentColor' style='font-size:1em'>(</text>
+<text text-anchor='middle' x='240' y='148' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='240' y='180' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='240' y='196' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='240' y='228' fill='currentColor' style='font-size:1em'>+</text>
+<text text-anchor='middle' x='240' y='276' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='240' y='324' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='240' y='388' fill='currentColor' style='font-size:1em'>y</text>
+<text text-anchor='middle' x='240' y='420' fill='currentColor' style='font-size:1em'>q</text>
+<text text-anchor='middle' x='240' y='452' fill='currentColor' style='font-size:1em'>y</text>
+<text text-anchor='middle' x='240' y='484' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='248' y='4' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='248' y='68' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='248' y='116' fill='currentColor' style='font-size:1em'>q</text>
+<text text-anchor='middle' x='248' y='148' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='248' y='180' fill='currentColor' style='font-size:1em'>(</text>
+<text text-anchor='middle' x='248' y='196' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='248' y='260' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='248' y='276' fill='currentColor' style='font-size:1em'>g</text>
+<text text-anchor='middle' x='248' y='324' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='248' y='388' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='248' y='420' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='248' y='452' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='248' y='484' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='256' y='20' fill='currentColor' style='font-size:1em'>(</text>
+<text text-anchor='middle' x='256' y='36' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='256' y='68' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='256' y='84' fill='currentColor' style='font-size:1em'>F</text>
+<text text-anchor='middle' x='256' y='116' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='256' y='148' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='256' y='180' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='256' y='196' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='256' y='228' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='256' y='260' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='256' y='276' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='256' y='324' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='256' y='420' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='256' y='484' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='264' y='4' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='264' y='20' fill='currentColor' style='font-size:1em'>S</text>
+<text text-anchor='middle' x='264' y='36' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='264' y='68' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='264' y='84' fill='currentColor' style='font-size:1em'>A</text>
+<text text-anchor='middle' x='264' y='116' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='264' y='148' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='264' y='180' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='264' y='228' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='264' y='260' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='264' y='276' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='264' y='356' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='264' y='388' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='264' y='420' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='264' y='452' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='264' y='484' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='272' y='4' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='272' y='20' fill='currentColor' style='font-size:1em'>H</text>
+<text text-anchor='middle' x='272' y='36' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='272' y='68' fill='currentColor' style='font-size:1em'>y</text>
+<text text-anchor='middle' x='272' y='84' fill='currentColor' style='font-size:1em'>I</text>
+<text text-anchor='middle' x='272' y='116' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='272' y='148' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='272' y='180' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='272' y='196' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='272' y='228' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='272' y='260' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='272' y='324' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='272' y='356' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='272' y='388' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='272' y='420' fill='currentColor' style='font-size:1em'>y</text>
+<text text-anchor='middle' x='272' y='452' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='272' y='484' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='280' y='4' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='280' y='20' fill='currentColor' style='font-size:1em'>A</text>
+<text text-anchor='middle' x='280' y='68' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='280' y='84' fill='currentColor' style='font-size:1em'>S</text>
+<text text-anchor='middle' x='280' y='116' fill='currentColor' style='font-size:1em'>y</text>
+<text text-anchor='middle' x='280' y='148' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='280' y='180' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='280' y='196' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='280' y='228' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='280' y='260' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='280' y='276' fill='currentColor' style='font-size:1em'>m</text>
+<text text-anchor='middle' x='280' y='324' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='280' y='356' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='280' y='388' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='280' y='420' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='280' y='452' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='280' y='484' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='288' y='4' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='288' y='20' fill='currentColor' style='font-size:1em'>-</text>
+<text text-anchor='middle' x='288' y='36' fill='currentColor' style='font-size:1em'>=</text>
+<text text-anchor='middle' x='288' y='84' fill='currentColor' style='font-size:1em'>S</text>
+<text text-anchor='middle' x='288' y='116' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='288' y='148' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='288' y='180' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='288' y='196' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='288' y='228' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='288' y='260' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='288' y='276' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='288' y='324' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='288' y='356' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='288' y='388' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='288' y='452' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='288' y='484' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='296' y='4' fill='currentColor' style='font-size:1em'>m</text>
+<text text-anchor='middle' x='296' y='20' fill='currentColor' style='font-size:1em'>2</text>
+<text text-anchor='middle' x='296' y='68' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='296' y='148' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='296' y='180' fill='currentColor' style='font-size:1em'>x</text>
+<text text-anchor='middle' x='296' y='196' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='296' y='228' fill='currentColor' style='font-size:1em'>x</text>
+<text text-anchor='middle' x='296' y='260' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='296' y='276' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='296' y='324' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='296' y='356' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='296' y='388' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='296' y='420' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='296' y='452' fill='currentColor' style='font-size:1em'>m</text>
+<text text-anchor='middle' x='296' y='484' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='304' y='4' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='304' y='20' fill='currentColor' style='font-size:1em'>5</text>
+<text text-anchor='middle' x='304' y='36' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='304' y='68' fill='currentColor' style='font-size:1em'>=</text>
+<text text-anchor='middle' x='304' y='84' fill='currentColor' style='font-size:1em'>I</text>
+<text text-anchor='middle' x='304' y='116' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='304' y='148' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='304' y='180' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='304' y='196' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='304' y='228' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='304' y='260' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='304' y='276' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='304' y='324' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='304' y='356' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='304' y='388' fill='currentColor' style='font-size:1em'>x</text>
+<text text-anchor='middle' x='304' y='420' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='304' y='452' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='304' y='484' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='312' y='4' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='312' y='20' fill='currentColor' style='font-size:1em'>6</text>
+<text text-anchor='middle' x='312' y='36' fill='currentColor' style='font-size:1em'>m</text>
+<text text-anchor='middle' x='312' y='68' fill='currentColor' style='font-size:1em'>1</text>
+<text text-anchor='middle' x='312' y='84' fill='currentColor' style='font-size:1em'>/</text>
+<text text-anchor='middle' x='312' y='116' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='312' y='148' fill='currentColor' style='font-size:1em'>]</text>
+<text text-anchor='middle' x='312' y='180' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='312' y='196' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='312' y='228' fill='currentColor' style='font-size:1em'>)</text>
+<text text-anchor='middle' x='312' y='260' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='312' y='276' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='312' y='324' fill='currentColor' style='font-size:1em'>w</text>
+<text text-anchor='middle' x='312' y='356' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='312' y='388' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='312' y='420' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='312' y='452' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='320' y='4' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='320' y='36' fill='currentColor' style='font-size:1em'>m</text>
+<text text-anchor='middle' x='320' y='68' fill='currentColor' style='font-size:1em'>0</text>
+<text text-anchor='middle' x='320' y='84' fill='currentColor' style='font-size:1em'>O</text>
+<text text-anchor='middle' x='320' y='116' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='320' y='260' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='320' y='324' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='320' y='356' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='320' y='388' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='320' y='420' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='320' y='452' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='320' y='484' fill='currentColor' style='font-size:1em'>m</text>
+<text text-anchor='middle' x='328' y='4' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='328' y='20' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='328' y='36' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='328' y='68' fill='currentColor' style='font-size:1em'>)</text>
+<text text-anchor='middle' x='328' y='116' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='328' y='180' fill='currentColor' style='font-size:1em'>m</text>
+<text text-anchor='middle' x='328' y='196' fill='currentColor' style='font-size:1em'>f</text>
+<text text-anchor='middle' x='328' y='228' fill='currentColor' style='font-size:1em'>=</text>
+<text text-anchor='middle' x='328' y='260' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='328' y='276' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='328' y='324' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='328' y='356' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='328' y='420' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='328' y='452' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='328' y='484' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='336' y='4' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='336' y='20' fill='currentColor' style='font-size:1em'>f</text>
+<text text-anchor='middle' x='336' y='36' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='336' y='84' fill='currentColor' style='font-size:1em'>w</text>
+<text text-anchor='middle' x='336' y='116' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='336' y='180' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='336' y='196' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='336' y='260' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='336' y='276' fill='currentColor' style='font-size:1em'>f</text>
+<text text-anchor='middle' x='336' y='324' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='336' y='356' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='336' y='388' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='336' y='420' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='336' y='452' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='336' y='484' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='344' y='4' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='344' y='36' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='344' y='84' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='344' y='116' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='344' y='180' fill='currentColor' style='font-size:1em'>x</text>
+<text text-anchor='middle' x='344' y='196' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='344' y='228' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='344' y='260' fill='currentColor' style='font-size:1em'>)</text>
+<text text-anchor='middle' x='344' y='276' fill='currentColor' style='font-size:1em'>:</text>
+<text text-anchor='middle' x='344' y='356' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='344' y='388' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='344' y='420' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='344' y='452' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='344' y='484' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='352' y='4' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='352' y='20' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='352' y='36' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='352' y='84' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='352' y='116' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='352' y='148' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='352' y='180' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='352' y='196' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='352' y='228' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='352' y='356' fill='currentColor' style='font-size:1em'>x</text>
+<text text-anchor='middle' x='352' y='388' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='352' y='420' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='352' y='452' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='352' y='484' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='360' y='4' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='360' y='20' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='360' y='36' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='360' y='84' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='360' y='116' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='360' y='148' fill='currentColor' style='font-size:1em'>x</text>
+<text text-anchor='middle' x='360' y='180' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='360' y='196' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='360' y='228' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='360' y='276' fill='currentColor' style='font-size:1em'>w</text>
+<text text-anchor='middle' x='360' y='292' fill='currentColor' style='font-size:1em'>A</text>
+<text text-anchor='middle' x='360' y='308' fill='currentColor' style='font-size:1em'>A</text>
+<text text-anchor='middle' x='360' y='356' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='360' y='388' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='360' y='420' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='360' y='452' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='360' y='484' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='368' y='4' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='368' y='20' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='368' y='36' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='368' y='84' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='368' y='116' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='368' y='148' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='368' y='180' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='368' y='228' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='368' y='276' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='368' y='292' fill='currentColor' style='font-size:1em'>N</text>
+<text text-anchor='middle' x='368' y='308' fill='currentColor' style='font-size:1em'>N</text>
+<text text-anchor='middle' x='368' y='388' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='368' y='420' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='368' y='452' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='368' y='484' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='376' y='4' fill='currentColor' style='font-size:1em'>)</text>
+<text text-anchor='middle' x='376' y='20' fill='currentColor' style='font-size:1em'>m</text>
+<text text-anchor='middle' x='376' y='84' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='376' y='116' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='376' y='148' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='376' y='180' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='376' y='228' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='376' y='276' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='376' y='292' fill='currentColor' style='font-size:1em'>D</text>
+<text text-anchor='middle' x='376' y='308' fill='currentColor' style='font-size:1em'>D</text>
+<text text-anchor='middle' x='376' y='388' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='376' y='420' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='376' y='452' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='376' y='484' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='384' y='20' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='384' y='36' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='384' y='84' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='384' y='116' fill='currentColor' style='font-size:1em'>)</text>
+<text text-anchor='middle' x='384' y='148' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='384' y='180' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='384' y='228' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='384' y='276' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='384' y='388' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='384' y='420' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='384' y='484' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='392' y='20' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='392' y='36' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='392' y='148' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='392' y='180' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='392' y='228' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='392' y='276' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='392' y='292' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='392' y='308' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='392' y='388' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='392' y='420' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='392' y='452' fill='currentColor' style='font-size:1em'>f</text>
+<text text-anchor='middle' x='392' y='484' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='400' y='20' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='400' y='36' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='400' y='84' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='400' y='180' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='400' y='228' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='400' y='276' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='400' y='292' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='400' y='308' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='400' y='388' fill='currentColor' style='font-size:1em'>)</text>
+<text text-anchor='middle' x='400' y='452' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='400' y='484' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='408' y='20' fill='currentColor' style='font-size:1em'>z</text>
+<text text-anchor='middle' x='408' y='36' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='408' y='84' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='408' y='148' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='408' y='180' fill='currentColor' style='font-size:1em'>=</text>
+<text text-anchor='middle' x='408' y='228' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='408' y='276' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='408' y='308' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='408' y='420' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='408' y='452' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='416' y='20' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='416' y='36' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='416' y='148' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='416' y='180' fill='currentColor' style='font-size:1em'>6</text>
+<text text-anchor='middle' x='416' y='228' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='416' y='276' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='416' y='292' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='416' y='308' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='416' y='420' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='416' y='452' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='416' y='484' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='424' y='20' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='424' y='36' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='424' y='84' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='424' y='116' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='424' y='180' fill='currentColor' style='font-size:1em'>0</text>
+<text text-anchor='middle' x='424' y='228' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='424' y='276' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='424' y='292' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='424' y='308' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='424' y='420' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='424' y='452' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='424' y='484' fill='currentColor' style='font-size:1em'>v</text>
+<text text-anchor='middle' x='432' y='36' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='432' y='84' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='432' y='116' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='432' y='148' fill='currentColor' style='font-size:1em'>f</text>
+<text text-anchor='middle' x='432' y='180' fill='currentColor' style='font-size:1em'>0</text>
+<text text-anchor='middle' x='432' y='228' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='432' y='276' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='432' y='292' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='432' y='308' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='432' y='420' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='432' y='452' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='432' y='484' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='440' y='20' fill='currentColor' style='font-size:1em'>q</text>
+<text text-anchor='middle' x='440' y='84' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='440' y='116' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='440' y='148' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='440' y='180' fill='currentColor' style='font-size:1em'>0</text>
+<text text-anchor='middle' x='440' y='292' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='440' y='308' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='440' y='388' fill='currentColor' style='font-size:1em'>{</text>
+<text text-anchor='middle' x='440' y='420' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='440' y='452' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='440' y='484' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='448' y='20' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='448' y='36' fill='currentColor' style='font-size:1em'>z</text>
+<text text-anchor='middle' x='448' y='84' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='448' y='116' fill='currentColor' style='font-size:1em'>-</text>
+<text text-anchor='middle' x='448' y='148' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='448' y='180' fill='currentColor' style='font-size:1em'>)</text>
+<text text-anchor='middle' x='448' y='276' fill='currentColor' style='font-size:1em'>&lt;</text>
+<text text-anchor='middle' x='448' y='292' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='448' y='308' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='448' y='388' fill='currentColor' style='font-size:1em'>f</text>
+<text text-anchor='middle' x='448' y='420' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='448' y='452' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='448' y='484' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='456' y='20' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='456' y='36' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='456' y='84' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='456' y='116' fill='currentColor' style='font-size:1em'>3</text>
+<text text-anchor='middle' x='456' y='148' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='456' y='276' fill='currentColor' style='font-size:1em'>=</text>
+<text text-anchor='middle' x='456' y='292' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='456' y='308' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='456' y='388' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='456' y='420' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='456' y='452' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='456' y='484' fill='currentColor' style='font-size:1em'>m</text>
+<text text-anchor='middle' x='464' y='20' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='464' y='36' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='464' y='84' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='464' y='292' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='464' y='308' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='464' y='388' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='464' y='420' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='464' y='452' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='464' y='484' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='472' y='20' fill='currentColor' style='font-size:1em'>y</text>
+<text text-anchor='middle' x='472' y='36' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='472' y='84' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='472' y='148' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='472' y='276' fill='currentColor' style='font-size:1em'>1</text>
+<text text-anchor='middle' x='472' y='292' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='472' y='308' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='472' y='388' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='472' y='420' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='472' y='452' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='472' y='484' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='480' y='84' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='480' y='148' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='480' y='276' fill='currentColor' style='font-size:1em'>2</text>
+<text text-anchor='middle' x='480' y='308' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='480' y='388' fill='currentColor' style='font-size:1em'>h</text>
+<text text-anchor='middle' x='480' y='420' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='480' y='452' fill='currentColor' style='font-size:1em'>)</text>
+<text text-anchor='middle' x='480' y='484' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='488' y='20' fill='currentColor' style='font-size:1em'>+</text>
+<text text-anchor='middle' x='488' y='36' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='488' y='84' fill='currentColor' style='font-size:1em'>g</text>
+<text text-anchor='middle' x='488' y='148' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='488' y='292' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='488' y='388' fill='currentColor' style='font-size:1em'>f</text>
+<text text-anchor='middle' x='488' y='420' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='488' y='484' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='496' y='36' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='496' y='84' fill='currentColor' style='font-size:1em'>.</text>
+<text text-anchor='middle' x='496' y='148' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='496' y='292' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='496' y='308' fill='currentColor' style='font-size:1em'>&lt;</text>
+<text text-anchor='middle' x='496' y='388' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='496' y='420' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='496' y='484' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='504' y='20' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='504' y='36' fill='currentColor' style='font-size:1em'>f</text>
+<text text-anchor='middle' x='504' y='84' fill='currentColor' style='font-size:1em'>L</text>
+<text text-anchor='middle' x='504' y='148' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='504' y='292' fill='currentColor' style='font-size:1em'>m</text>
+<text text-anchor='middle' x='504' y='308' fill='currentColor' style='font-size:1em'>=</text>
+<text text-anchor='middle' x='504' y='388' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='504' y='420' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='504' y='484' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='512' y='20' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='512' y='36' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='512' y='84' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='512' y='148' fill='currentColor' style='font-size:1em'>x</text>
+<text text-anchor='middle' x='512' y='292' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='512' y='388' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='512' y='420' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='512' y='484' fill='currentColor' style='font-size:1em'>}</text>
+<text text-anchor='middle' x='520' y='20' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='520' y='36' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='520' y='84' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='520' y='148' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='520' y='292' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='520' y='308' fill='currentColor' style='font-size:1em'>3</text>
+<text text-anchor='middle' x='520' y='388' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='528' y='20' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='528' y='36' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='528' y='84' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='528' y='292' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='528' y='308' fill='currentColor' style='font-size:1em'>5</text>
+<text text-anchor='middle' x='528' y='388' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='528' y='420' fill='currentColor' style='font-size:1em'>m</text>
+<text text-anchor='middle' x='536' y='20' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='536' y='36' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='536' y='148' fill='currentColor' style='font-size:1em'>w</text>
+<text text-anchor='middle' x='536' y='292' fill='currentColor' style='font-size:1em'>x</text>
+<text text-anchor='middle' x='536' y='308' fill='currentColor' style='font-size:1em'>0</text>
+<text text-anchor='middle' x='536' y='388' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='536' y='420' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='544' y='20' fill='currentColor' style='font-size:1em'>)</text>
+<text text-anchor='middle' x='544' y='36' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='544' y='148' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='544' y='292' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='544' y='308' fill='currentColor' style='font-size:1em'>0</text>
+<text text-anchor='middle' x='544' y='388' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='544' y='420' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='552' y='36' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='552' y='148' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='552' y='292' fill='currentColor' style='font-size:1em'>t</text>
+<text text-anchor='middle' x='552' y='420' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='560' y='148' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='560' y='292' fill='currentColor' style='font-size:1em'>y</text>
+<text text-anchor='middle' x='560' y='388' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='560' y='420' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='568' y='36' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='568' y='148' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='568' y='388' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='568' y='420' fill='currentColor' style='font-size:1em'>_</text>
+<text text-anchor='middle' x='576' y='36' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='576' y='148' fill='currentColor' style='font-size:1em'>w</text>
+<text text-anchor='middle' x='576' y='292' fill='currentColor' style='font-size:1em'>k</text>
+<text text-anchor='middle' x='576' y='388' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='576' y='420' fill='currentColor' style='font-size:1em'>u</text>
+<text text-anchor='middle' x='584' y='36' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='584' y='148' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='584' y='292' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='584' y='388' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='584' y='420' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='592' y='36' fill='currentColor' style='font-size:1em'>l</text>
+<text text-anchor='middle' x='592' y='292' fill='currentColor' style='font-size:1em'>y</text>
+<text text-anchor='middle' x='592' y='388' fill='currentColor' style='font-size:1em'>v</text>
+<text text-anchor='middle' x='592' y='420' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='600' y='36' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='600' y='292' fill='currentColor' style='font-size:1em'>w</text>
+<text text-anchor='middle' x='600' y='388' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='600' y='420' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='608' y='292' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='608' y='388' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='608' y='420' fill='currentColor' style='font-size:1em'>)</text>
+<text text-anchor='middle' x='616' y='292' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='616' y='388' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='624' y='292' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='624' y='388' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='632' y='292' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='632' y='388' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='648' y='388' fill='currentColor' style='font-size:1em'>p</text>
+<text text-anchor='middle' x='656' y='388' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='664' y='388' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='672' y='388' fill='currentColor' style='font-size:1em'>c</text>
+<text text-anchor='middle' x='680' y='388' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='688' y='388' fill='currentColor' style='font-size:1em'>s</text>
+<text text-anchor='middle' x='696' y='388' fill='currentColor' style='font-size:1em'>i</text>
+<text text-anchor='middle' x='704' y='388' fill='currentColor' style='font-size:1em'>o</text>
+<text text-anchor='middle' x='712' y='388' fill='currentColor' style='font-size:1em'>n</text>
+<text text-anchor='middle' x='720' y='388' fill='currentColor' style='font-size:1em'>,</text>
+<text text-anchor='middle' x='736' y='388' fill='currentColor' style='font-size:1em'>g</text>
+<text text-anchor='middle' x='744' y='388' fill='currentColor' style='font-size:1em'>r</text>
+<text text-anchor='middle' x='752' y='388' fill='currentColor' style='font-size:1em'>a</text>
+<text text-anchor='middle' x='760' y='388' fill='currentColor' style='font-size:1em'>d</text>
+<text text-anchor='middle' x='768' y='388' fill='currentColor' style='font-size:1em'>e</text>
+<text text-anchor='middle' x='776' y='388' fill='currentColor' style='font-size:1em'>}</text>
+</g>
+
+    </svg>
+  
+</div>
+<h3 id="model-routing-as-a-design-pattern">Model Routing as a Design Pattern<a hidden class="anchor" aria-hidden="true" href="#model-routing-as-a-design-pattern">#</a></h3>
+<p>The routing in Phase 3.5 deserves explicit attention because the temptation is to use a single, large managed API model for everything.</p>
+<p>The routing logic operates on three signals simultaneously: query word count, presence of clinical complexity keywords (<code>contraindication</code>, <code>pathophysiology</code>, <code>differential</code>, <code>prognosis</code>, <code>etiology</code>), and assembled token count. Only when all three signals indicate a simple query does the pipeline route to the lighter model. Clinical complexity keywords act as an explicit vocabulary gate. Terms like these indicate the query requires multi-step clinical reasoning that smaller models handle poorly.</p>
+<p>On cost: routing simple queries to an 8B model versus a 70B model produces roughly 10x cost reduction on those calls. At query volume, this is significant.</p>
+<p>On the inference backend question: managed API models like Claude 3.5 Haiku and GPT-4o-mini are highly capable and convenient. For deployments where all patient context is fully de-identified before query time, they are a legitimate option and they eliminate the operational burden of running your own inference infrastructure.</p>
+<p>The constraint appears when raw patient data flows through the query. In that case, the query payload (containing patient context assembled from retrieved chunks) leaves your network boundary on every API call. Whether this is acceptable depends on your organization&rsquo;s data processing agreements and regulatory position, not on a blanket architectural rule.</p>
+<p>For deployments that require patient data to stay on-premises or within a private VPC, open-weight models served via vLLM or Ollama are the right path. Both runtimes support <code>llama-3-8b</code> and <code>llama-3.3-70b</code> class models, give you full control over the inference stack, and eliminate per-token API costs at the expense of GPU infrastructure overhead. The capability gap between open-weight and frontier closed models on structured clinical reasoning over retrieved context has narrowed significantly in the past 18 months. This trade-off is more favorable than it was.</p>
+<blockquote>
+<p><strong>Note:</strong> Groq is a cloud inference API backed by proprietary LPU hardware. It is not self-hostable. Using the Groq API routes your payloads through Groq&rsquo;s infrastructure, which carries the same data boundary considerations as any other managed API.</p></blockquote>
+<hr>
+<h2 id="scaling-the-architecture">Scaling the Architecture<a hidden class="anchor" aria-hidden="true" href="#scaling-the-architecture">#</a></h2>
+<p>When a clinical RAG system grows beyond a single-tenant deployment or a single institution&rsquo;s document volume, three components need to be re-evaluated:</p>
+<ul>
+<li>
+<p><strong>Vector storage:</strong> FAISS is a local, in-process index. It does not support horizontal scaling, concurrent writes from multiple ingestion workers, or filtered search across metadata fields without a full scan. Migrating to a distributed vector database (Qdrant or Milvus) enables sharded indexing, filtered retrieval by document type or department, and multi-node query distribution. The Parent-Child chunking pattern transfers directly; only the storage backend changes.</p>
+</li>
+<li>
+<p><strong>Asynchronous observability:</strong> Synchronous LLM-as-Judge evaluation on the main query thread adds 300-400ms to every response. Under concurrent load, this becomes a bottleneck. The correct pattern is to decouple evaluation entirely: return the primary response immediately, publish the evaluation job to a task queue (Celery with Redis as broker), and let async workers compute and store scores in a separate audit log. Clinicians get answers at full speed. Quality monitoring runs continuously without blocking.</p>
+</li>
+<li>
+<p><strong>Domain-adapted embeddings:</strong> <code>all-MiniLM-L6-v2</code> was trained on general text. Its embedding space underrepresents rare disease terminology, genetic condition nomenclature, and highly specific procedural codes. Parent-child chunking reduces the impact of vector collapse but does not resolve the root issue: the embedding model was not trained on clinical language. Swapping to ClinicalBERT or a BioBERT variant inherently sharpens the embedding space for clinical entities. This raises retrieval precision on long-tail medical queries without any changes to chunking or retrieval logic.</p>
+</li>
+</ul>
+<hr>
+<h2 id="what-this-architecture-does-not-solve">What This Architecture Does Not Solve<a hidden class="anchor" aria-hidden="true" href="#what-this-architecture-does-not-solve">#</a></h2>
+<p><strong>Index staleness after guideline updates.</strong> When a clinical protocol or drug formulary is revised, the superseded version&rsquo;s vectors must be explicitly removed from the index. Cache invalidation on new uploads handles the immediate session, but it does not implement version diffing of updated guideline documents. A production system needs an explicit document lifecycle policy, tracked via a document registry, that marks old versions as deprecated and removes their chunk vectors from the index before they serve stale advice.</p>
+<p><strong>Evaluation latency under concurrent load.</strong> Addressed in the scaling section above, but worth stating directly: synchronous evaluation is an architectural constraint, not just a performance issue. Under load, it creates head-of-line blocking on the query path. Async evaluation is not optional at scale.</p>
+<hr>
+<h2 id="conclusion">Conclusion<a hidden class="anchor" aria-hidden="true" href="#conclusion">#</a></h2>
+<p>Naive RAG fails in healthcare at four distinct structural points. Ingestion silently drops non-digital records. Fixed-size chunking severs critical clinical entities and causes vector collapse. Similarity-ordered retrieval buries high-signal context where LLM attention is weakest. Manual evaluation gives engineers no signal until degradation is already severe.</p>
+<p>The production design patterns that address these failures are: dual-layer adaptive OCR; parent-child chunking with entity-level retrieval and context-level generation; cross-encoder reranking to enforce relevance ordering before context assembly; and deterministic LLM-as-Judge scoring at <code>temperature=0</code> after every generation.</p>
+<p>These components form a stateful pipeline where failure at any stage propagates forward. A silently discarded ingestion page produces no child chunk, no parent context, no retrieved evidence, and ultimately a faithfulness score of zero. The observability at the end of the pipeline is only useful when the data integrity at the beginning is guaranteed.</p>
+<p>RAG in healthcare is a systems engineering problem. Every component owns a failure mode. Every failure mode has a concrete fix. There is no shortcut past any of them.</p>
+
+
+  </div>
+
+  <footer class="post-footer">
+    <ul class="post-tags">
+    </ul>
+  </footer>
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="https://deveshnathjha.github.io/">Devesh Nath Jha</a></span> · 
+
+    
+    
+    <span>
+        Powered by
+        <a href="https://gohugo.io/?utm_source=papermod" rel="noopener" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" id="top-link" class="top-link hidden" aria-label="go to top" title="Go to Top (Alt + G)" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round" class="feather feather-chevrons-up">
+        <polyline points="17 11 12 6 7 11"></polyline>
+        <polyline points="17 18 12 13 7 18"></polyline>
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var toplink = document.getElementById("top-link");
+    window.onscroll = function () {
+        const scrollThreshold = window.innerHeight;
+        if (document.body.scrollTop > scrollThreshold || document.documentElement.scrollTop > scrollThreshold) {
+            toplink.classList.remove("hidden");
+        } else {
+            toplink.classList.add("hidden");
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+</body>
+
+</html>

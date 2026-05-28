@@ -1,4 +1,7 @@
 code, pre, .highlight {
-    font-family: Consolas, 'Liberation Mono', Menlo, Courier, monospace !important;
+    font-family: "Courier New", Courier, monospace !important;
     letter-spacing: normal !important;
+    font-variant-ligatures: none !important;
+    font-variant: no-contextual !important;
+    font-feature-settings: "calt" 0 !important;
 }
