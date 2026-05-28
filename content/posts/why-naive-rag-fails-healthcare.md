@@ -79,7 +79,7 @@ For general-domain text, this works. For clinical text, it breaks in a specific 
 
 Consider this sentence: *"Patient presents with Type 2 Diabetes Mellitus (ICD-10: E11.9), hypertensive crisis (ICD-10: I16.0), and early-stage chronic kidney disease (ICD-10: N18.3)."*
 
-A fixed-size chunker at 512 tokens will, with high probability, split this across a chunk boundary. The ICD-10 code gets separated from its qualifying condition. The resulting chunk contains "hypertensive crisis" as its dominant semantic signal. The vector is shaped primarily by the high-frequency clinical term "hypertension." The code `I16.0`, which specifically distinguishes a hypertensive crisis from chronic hypertension, is averaged out. Its weight in the final embedding is negligible.
+A standard fixed-size chunker (e.g., at 512 tokens) will, with high probability, split this sentence across a chunk boundary. This separation isolates the critical ICD-10 medical diagnosis code from its qualifying clinical condition. The resulting chunk contains "hypertensive crisis" as its dominant semantic signal, but the specific ICD-10 medical classification code `I16.0` (which distinguishes a hypertensive urgency/crisis from chronic hypertension) gets averaged out during embedding. Its weight in the final embedding vector becomes negligible.
 
 This is vector collapse. Rare but diagnostically critical entities (specific comorbidities, drug contraindication codes, rare genetic markers) get overwhelmed by high-frequency surrounding terms. A query for "contraindicated drugs in CKD stage 3" retrieves chunks that are thematically adjacent to kidney disease, not the chunks that encode stage 3 specifically. The retriever returns the wrong context. The model reasons over it confidently.
 
@@ -87,20 +87,20 @@ This is vector collapse. Rare but diagnostically critical entities (specific com
 
 The fix is architectural: separate the retrieval unit from the generation unit.
 
-**Child chunks** are small (400 characters, 50-char overlap). Their size is calibrated to contain a single clinical statement: one diagnosis with its ICD code, one medication with its dosage constraint. These are the only units indexed into the vector store. Embedding a small, focused span reduces averaging and preserves the signal of rare entities.
+**Child chunks** are designed to be small and highly targeted (typically 300 to 500 characters, with a 50-character overlap). The size is deliberately calibrated to isolate single clinical statements—such as a single diagnosis alongside its ICD code, or a specific medication paired with a dosage constraint. Only these small child chunks are indexed in the vector store. Embedding a focused span minimizes semantic averaging and preserves the signal of rare or critical entities.
 
-**Parent chunks** are larger (1500 characters, 100-char overlap) and stored in a separate key-value structure. Every child chunk carries a `parent_id` in its metadata pointing to its enclosing parent.
+**Parent chunks** are larger (typically 1,500 to 2,000 characters, with a 100 to 200-character overlap) to preserve the full clinical narrative, patient history, or context. These are stored separately in a key-value store (such as Redis, MongoDB, or a local relational mapping). Each child chunk carries a `parent_id` reference in its metadata pointing back to its enclosing parent chunk.
 
-**Retrieval expansion** is the critical step. When the vector store returns the top-k child chunks, the pipeline does not pass those children to the LLM. It resolves each `parent_id` and passes the full parent chunk instead. The model receives complete clinical context. The retriever operated on precise entity-level spans.
+**Retrieval expansion** is the core operational mechanism. When the vector database returns the top-k most similar child chunks, the RAG pipeline does not feed those raw children to the LLM. Instead, it dynamically resolves each `parent_id` and substitutes the corresponding larger parent chunk. This approach allows the retriever to operate on precise, entity-level spans while ensuring the generator (LLM) receives complete, coherent context.
 
 ```python
-# Parent-Child retrieval expansion
-child_results = faiss_index.similarity_search(query, k=10)
+# Example of Parent-Child retrieval expansion
+child_results = vector_db.similarity_search(query, k=10)
 
 contexts_for_llm = []
 for child in child_results:
     parent_id = child.metadata["parent_id"]
-    parent_chunk = parent_store[parent_id]  # Full 1500-char context
+    parent_chunk = document_store[parent_id]  # Retrieve expanded parent context
     contexts_for_llm.append(parent_chunk)
 ```
 
@@ -124,17 +124,31 @@ After bi-encoder retrieval, a cross-encoder reranking step is necessary before c
 
 Bi-encoders are fast because they compare pre-computed vectors independently. Cross-encoders process the query and each candidate passage jointly, attending to the direct relationship between them. This joint attention is what makes them superior for relevance scoring. They evaluate the specific query-passage relationship, not just embedding proximity.
 
-FlashRank is a lightweight cross-encoder designed for fast reranking without significant latency overhead. The retrieval sequence becomes:
+A lightweight cross-encoder model (such as FlashRank or Cohere Rerank) should be used for fast reranking without significant latency overhead. The retrieval sequence becomes:
 
 ```
-FAISS (bi-encoder, k=10) -> FlashRank cross-encoder rerank -> top-3 -> parent expansion -> LLM
+Vector Store (bi-encoder, k=10) ➔ Cross-Encoder Rerank ➔ top-3 ➔ Parent Expansion ➔ LLM
 ```
 
-The top-3 reranked passages are assembled with the highest-relevance passage first. This directly counters the lost-in-the-middle effect by placing the highest-signal context at the position of maximum LLM attention.
+The top reranked passages are assembled with the highest-relevance passage first. This directly counters the lost-in-the-middle effect by placing the highest-signal context at the position of maximum LLM attention.
 
-The cap at top-3 is deliberate. Every token in the prompt has a cost. Token counting with `tiktoken` (cl100k_base) enforces a hard `MAX_CONTEXT_TOKENS = 6000` limit, and the pipeline drops the least relevant chunks first. Fewer, higher-quality chunks consistently outperform a larger, noisier context block on both quality metrics (nDCG, MRR) and inference cost.
+Enforcing a deliberate cap on the number of passed parent chunks (typically top-3 to top-5) is a standard design pattern. In production, every token in the prompt contributes directly to latency and cost. Best-practice architectures enforce a hard context token budget (for example, between 4,000 to 6,000 tokens) using token counters like `tiktoken` or standard tokenizer libraries. The pipeline should prioritize and place the highest-relevance chunks first, dropping less relevant ones if they exceed the budget. Serving fewer, higher-quality chunks consistently outperforms a large, noisy context window on both retrieval quality metrics (such as nDCG and MRR) and overall inference cost.
 
 In air-gapped hospital environments where the cross-encoder model cannot be loaded, the pipeline should fall back to raw bi-encoder scores rather than crashing. Retrieval quality degrades predictably and the system stays functional.
+
+---
+
+### Selecting the Right Vector Database
+
+Choosing the appropriate vector storage is a critical architectural decision for healthcare RAG systems. The table below compares standard vector databases and libraries based on enterprise suitability:
+
+| Vector Database | Architecture | Key Advantages | Major Limitations | Clinical Production Suitability |
+| :--- | :--- | :--- | :--- | :--- |
+| **FAISS (Facebook)** | Local, In-process library | Ultra-fast local reads, zero network latency. | In-memory only; no native horizontal scaling or metadata filtering; requires manual read/write locking in multi-threaded code. | Excellent for single-node deployments, embedded clinical offline systems, or read-only caches. |
+| **ChromaDB** | SQLite/In-process or Client-Server | Easiest setup, rich metadata filtering, active ecosystem. | Scaling limitations at massive query volumes, primarily single-node. | Excellent for clinical prototypes, internal hospital departmental apps, and medium datasets. |
+| **Qdrant** | Distributed, Client-Server (Rust) | Rich payload filtering, highly performant, horizontal clustering, cluster safety. | Infrastructure setup overhead. | **Highly recommended** for scalable enterprise healthcare systems requiring strict metadata filtering (e.g., filtering by department or physician). |
+| **pgvector (Postgres)** | RAG-extended Relational DB | Leverages mature Postgres ACID transactions, unified storage for patient records and vectors. | Slower index build times, database resources shared between structured queries and vector search. | Ideal for pipelines requiring strict patient data ACID compliance and joining relational charts directly with medical embeddings. |
+| **Milvus** | Highly Distributed, Enterprise | Massive scale, sharded ingestion, distributed multi-node architecture. | Extreme operational complexity and heavy resource consumption. | Best suited for country-scale patient databases or massive unified hospital networks. |
 
 ---
 
@@ -183,28 +197,30 @@ While individual clinical RAG implementations vary widely depending on their spe
 
 #### Phase 0: Semantic Cache Check
 * **Operation:** `QueryCache.get(query, document_scope)`
-* **How it works:** The system checks if the exact query has been asked recently within the same document set. It uses a SHA-256 hash of the normalized query and scope as a key.
-* **Why it matters:** If there is a match (within a 1-hour time-to-live window), the system returns the cached answer instantly, completely bypassing expensive database searches and LLM API calls.
+* **How it works:** The application checks if the incoming query has been evaluated recently within the same scope. A deterministic key is generated using a SHA-256 hash of the normalized query string and document scope.
+* **Why it matters:** If a cache hit occurs, the pre-validated answer is returned instantly. This bypasses the entire downstream retrieval and inference pipeline, eliminating API costs and reducing response latency to milliseconds.
+
+> **Deterministic Hashing vs. Semantic Caching:** While semantic similarity caches (like RedisVL or GPTCache) increase cache hits by matching conceptually similar queries (e.g., "aspirin dose" matching "aspirin dosage"), they introduce a serious risk of "false semantic matches" in clinical domains where slight variations in wording alter medical meaning. For zero-tolerance clinical RAG, a deterministic SHA-256 cache with a strict scope constraint is the safest baseline. If semantic caching is used, a very high similarity threshold (e.g., > 0.98) must be enforced.
 
 #### Phase 1: Dense Vector Retrieval
 * **Operation:** `VectorStore.search(query, k=10)`
-* **How it works:** The system queries a local FAISS index to find the top 10 most similar small "child" chunks. 
-* **Why it matters:** In a multi-threaded web server, database reads must be thread-safe. All FAISS I/O operations are wrapped in a thread lock (`threading.Lock`) to prevent server crashes under heavy traffic.
+* **How it works:** The RAG pipeline queries the configured vector store index to retrieve the top 10 most similar small "child" chunks.
+* **Why it matters:** In multi-threaded environments, database reads must be thread-safe. When using local, in-process libraries like FAISS, I/O operations must be wrapped in a mutual exclusion lock (`threading.Lock` in Python) to prevent database corruption or server crashes. Distributed databases (like Qdrant or pgvector) handle this natively at the server level, eliminating application-side locking.
 
 #### Phase 2: Relevance Reranking
 * **Operation:** `CrossEncoder.rerank(query, candidates)`
-* **How it works:** A lightweight cross-encoder model evaluates the query alongside the 10 candidate chunks, scoring them based on actual clinical relevance rather than raw vector math. The system keeps only the top 3 most relevant results.
-* **Why it matters:** This eliminates irrelevant noise and drastically reduces the amount of text sent to the LLM, lowering token costs.
+* **How it works:** A lightweight cross-encoder model evaluates the query alongside the retrieved candidate chunks, scoring them based on actual clinical relevance rather than raw distance in embedding space. The pipeline keeps only the highest-scoring chunks (typically top-3).
+* **Why it matters:** This filters out noisy, irrelevant context, reducing context size and saving significant inference costs.
 
 #### Phase 2.5: Context Expansion (Small-to-Big)
 * **Operation:** `parent_store[child.parent_id]`
-* **How it works:** The retriever originally matched small, precise "child" chunks. Now, the system looks up the unique `parent_id` for each of the top 3 results and pulls their larger enclosing "parent" chunks.
-* **Why it matters:** This ensures the LLM receives the full, uninterrupted context of the clinical notes, preventing half-sentences or fragmented information.
+* **How it works:** The RAG system retrieves the unique `parent_id` from the metadata of each matched child chunk and pulls its larger enclosing "parent" chunk from a key-value store.
+* **Why it matters:** This restores full clinical context (such as surrounding history or clinical narratives) to the prompt, avoiding the severe information fragmentation that occurs when sending raw child chunks.
 
 #### Phase 2.6: Context Optimization & Token Budgeting
 * **Operation:** `trim_to_token_budget(context, max_tokens=6000)`
-* **How it works:** The system counts the total tokens of the expanded context and drops the least relevant chunks if they exceed a hard limit of 6,000 tokens.
-* **Why it matters:** It prevents the LLM from getting overwhelmed (avoiding the "lost-in-the-middle" attention bias) and keeps API costs predictable.
+* **How it works:** The system counts the total tokens of the expanded context and drops the least relevant chunks if they exceed a hard limit (e.g., 6,000 tokens). This threshold should be dynamically scaled based on the target model's optimal context window.
+* **Why it matters:** It prevents prompt overflow, avoids the "lost-in-the-middle" attention bias, and ensures token counts stay within model limits.
 
 #### Phase 3: Token Auditing
 * **Operation:** `count_tokens(query + context)`
@@ -213,8 +229,8 @@ While individual clinical RAG implementations vary widely depending on their spe
 
 #### Phase 3.5: Intelligent Model Routing
 * **Operation:** `select_model(query, tokens_input)`
-* **How it works:** The system dynamically selects the most appropriate model. A fast, low-cost model is selected **only if** the query is very simple (12 words or less), contains no complex clinical keywords (like *contraindication* or *differential*), and the input size is small (under 3,500 tokens). Otherwise, it routes to a high-capacity reasoning model.
-* **Why it matters:** Saves up to 90% in inference costs for routine, simple questions while preserving deep reasoning power for complex medical queries.
+* **How it works:** The system dynamically selects the most appropriate model. A fast, low-cost model is selected **only if** the query is very simple (e.g., under 12 words), contains no complex clinical keywords (like *contraindication*, *differential*, or *prognosis*), and the input size is small (e.g., under 3,500 tokens). Otherwise, the query is routed to a high-capacity reasoning model.
+* **Why it matters:** By routing routine, simple queries to lighter models, clinical deployments can save up to 90% in inference costs while reserving the expensive reasoning power of frontier models for complex clinical scenarios.
 
 #### Phase 4: Primary Inference
 * **Operation:** `LLM.invoke(prompt)`
@@ -240,9 +256,9 @@ While individual clinical RAG implementations vary widely depending on their spe
 
 ### Model Routing as a Design Pattern
 
-The routing in Phase 3.5 deserves explicit attention because the temptation is to use a single, large managed API model for everything.
+The routing in Phase 3.5 deserves explicit attention because the temptation in clinical systems is to use a single, large managed API model for all queries.
 
-The routing logic operates on three signals simultaneously: query word count, presence of clinical complexity keywords (`contraindication`, `pathophysiology`, `differential`, `prognosis`, `etiology`), and assembled token count. Only when all three signals indicate a simple query does the pipeline route to the lighter model. Clinical complexity keywords act as an explicit vocabulary gate. Terms like these indicate the query requires multi-step clinical reasoning that smaller models handle poorly.
+A production clinical router should evaluate query complexity dynamically using three signals simultaneously: query word count, presence of clinical complexity keywords (`contraindication`, `pathophysiology`, `differential`, `prognosis`, `etiology`), and assembled token count. Only when all three signals indicate a simple query does the pipeline route to the lighter model. Clinical complexity keywords act as an explicit vocabulary gate. Terms like these indicate the query requires multi-step clinical reasoning that smaller models handle poorly.
 
 On cost: routing simple queries to an 8B model versus a 70B model produces roughly 10x cost reduction on those calls. At query volume, this is significant.
 
