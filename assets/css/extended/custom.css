@@ -1,38 +1,63 @@
-/* Light Mode (Sepia/Yellowish) */
+/* Premium Corporate/Professional Color Palette */
+
+/* Light Mode (Sophisticated Alabaster/Cream) */
 :root {
-    --theme: #faf8f5;
-    --entry: #faf8f5;
-    --primary: #1a1a1a;
-    --secondary: #555555;
-    --content: #222222;
+    --theme: #fdfcfb;
+    --entry: #fdfcfb;
+    --primary: #111111;
+    --secondary: #6e6e73;
+    --content: #1d1d1f;
+    --code-bg: #f5f5f7;
+    --border: #e5e5ea;
 }
 
-/* Dark Mode (Deep Charcoal) */
+/* Dark Mode (High-Contrast Professional Charcoal) */
 .dark {
-    --theme: #1c1c1c;
-    --entry: #1c1c1c;
-    --primary: #e0e0e0;
-    --secondary: #a0a0a0;
-    --content: #d0d0d0;
+    --theme: #121212;
+    --entry: #1e1e1e;
+    --primary: #ffffff;
+    --secondary: #a1a1a6;
+    --content: #f5f5f7; /* Very bright, high contrast, clean white/gray text */
+    --code-bg: #1e1e1e;
+    --border: #2c2c2e;
 }
 
-/* Red Headers */
+/* Corporate Dark Red Headers */
 h1, h2, h3, h4, h5, h6 {
-    color: #d32f2f !important;
+    color: #b32424 !important; /* Professional crimson/burgundy instead of bright red */
+    font-weight: 700;
 }
 
-/* Code block font overrides to prevent overlapping */
+/* Ensure links look professional and elegant */
+a {
+    color: #b32424;
+    transition: color 0.2s ease;
+}
+
+a:hover {
+    color: #8c1c1c;
+}
+
+/* Standard Monospace Code Blocks - High Readability, No Overlap */
 code, pre, .highlight {
-    font-family: Consolas, Constantia, "Courier New", monospace !important;
-    letter-spacing: 0.05em !important; /* Forces characters apart */
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace !important;
+    letter-spacing: normal !important; /* Keep letter spacing natural */
     font-variant-ligatures: none !important;
     font-variant: no-contextual !important;
     font-feature-settings: "calt" 0 !important;
-    white-space: pre-wrap !important; /* Ensures long lines wrap instead of squishing */
+    white-space: pre-wrap !important; /* Clean word-wrapping */
+    font-size: 0.9em !important;
+    line-height: 1.6 !important;
 }
 
-/* Fix Hugo Chroma Syntax Highlighter overlapping issue */
+/* Fix Hugo Chroma Syntax Highlighter overlapping/flexbox issues */
 .chroma .line {
     display: block !important;
 }
 
+/* Make code blocks look clean and premium */
+pre {
+    padding: 1.25em !important;
+    border-radius: 8px !important;
+    border: 1px solid var(--border) !important;
+}

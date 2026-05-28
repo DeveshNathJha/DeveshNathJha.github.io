@@ -174,44 +174,72 @@ When a response grades C or F, the telemetry on that query includes the exact ch
 The judge must never block the main query path. Any failure (timeout, parse error, unexpected output) should return null scores and let the primary response through. At approximately $0.000025 per evaluation call, this is not a meaningful cost constraint.
 
 ---
-
 ## Standard Production Execution Trace
 
-A production clinical RAG `get_response()` should execute in this sequence. Each phase should be independently timed and logged.
+A production-grade clinical RAG system must operate with absolute predictability and observability. Rather than treating the retrieval and generation loop as a black box, the execution flow is broken down into structured, independently timed, and logged phases. 
 
-```
-Phase 0:   QueryCache.get(query, document_scope)
-           -> Deterministic key (SHA-256 of normalized query + scope)
-           -> 1-hour TTL; cache hit = immediate return, zero inference calls
+Here is the exact step-by-step lifecycle of a production query inside `get_response()`, explained in clear engineering terms:
 
-Phase 1:   VectorStore.search(query, k=10)
-           -> Thread-safe read; FAISS I/O wrapped in threading.Lock
+---
 
-Phase 2:   CrossEncoder.rerank(query, candidates) -> top-3
+### The Execution Lifecycle
 
-Phase 2.5: parent_store[child.parent_id] -> expand to full context windows
+#### Phase 0: Semantic Cache Check
+* **Operation:** `QueryCache.get(query, document_scope)`
+* **How it works:** The system checks if the exact query has been asked recently within the same document set. It uses a SHA-256 hash of the normalized query and scope as a key.
+* **Why it matters:** If there is a match (within a 1-hour time-to-live window), the system returns the cached answer instantly, completely bypassing expensive database searches and LLM API calls.
 
-Phase 2.6: trim_to_token_budget(context, max_tokens=6000)
-           -> Drop least-relevant chunks first
+#### Phase 1: Dense Vector Retrieval
+* **Operation:** `VectorStore.search(query, k=10)`
+* **How it works:** The system queries a local FAISS index to find the top 10 most similar small "child" chunks. 
+* **Why it matters:** In a multi-threaded web server, database reads must be thread-safe. All FAISS I/O operations are wrapped in a thread lock (`threading.Lock`) to prevent server crashes under heavy traffic.
 
-Phase 3:   count_tokens(query + context) = tokens_input
+#### Phase 2: Relevance Reranking
+* **Operation:** `CrossEncoder.rerank(query, candidates)`
+* **How it works:** A lightweight cross-encoder model evaluates the query alongside the 10 candidate chunks, scoring them based on actual clinical relevance rather than raw vector math. The system keeps only the top 3 most relevant results.
+* **Why it matters:** This eliminates irrelevant noise and drastically reduces the amount of text sent to the LLM, lowering token costs.
 
-Phase 3.5: select_model(query, tokens_input)
-           -> Route to lightweight model if: word_count <= 12
-                                             AND no clinical complexity keywords
-                                             AND tokens_input <= 3500
-           -> Route to full model otherwise
+#### Phase 2.5: Context Expansion (Small-to-Big)
+* **Operation:** `parent_store[child.parent_id]`
+* **How it works:** The retriever originally matched small, precise "child" chunks. Now, the system looks up the unique `parent_id` for each of the top 3 results and pulls their larger enclosing "parent" chunks.
+* **Why it matters:** This ensures the LLM receives the full, uninterrupted context of the clinical notes, preventing half-sentences or fragmented information.
 
-Phase 4:   LLM.invoke(prompt) -> response_text
+#### Phase 2.6: Context Optimization & Token Budgeting
+* **Operation:** `trim_to_token_budget(context, max_tokens=6000)`
+* **How it works:** The system counts the total tokens of the expanded context and drops the least relevant chunks if they exceed a hard limit of 6,000 tokens.
+* **Why it matters:** It prevents the LLM from getting overwhelmed (avoiding the "lost-in-the-middle" attention bias) and keeps API costs predictable.
 
-Phase 5:   Judge.evaluate(query, context, response) -> {faithfulness, relevance, precision, grade}
+#### Phase 3: Token Auditing
+* **Operation:** `count_tokens(query + context)`
+* **How it works:** An exact token count of the final assembled prompt is calculated prior to triggering the LLM.
+* **Why it matters:** Essential for real-time cost tracking and ensuring the prompt fits safely within the model's limits.
 
-Phase 5.5: TokenBudget.record(query, tokens_input, tokens_output, model_used)
+#### Phase 3.5: Intelligent Model Routing
+* **Operation:** `select_model(query, tokens_input)`
+* **How it works:** The system dynamically selects the most appropriate model. A fast, low-cost model is selected **only if** the query is very simple (12 words or less), contains no complex clinical keywords (like *contraindication* or *differential*), and the input size is small (under 3,500 tokens). Otherwise, it routes to a high-capacity reasoning model.
+* **Why it matters:** Saves up to 90% in inference costs for routine, simple questions while preserving deep reasoning power for complex medical queries.
 
-Phase 6:   QueryCache.set(query, document_scope, full_result)
+#### Phase 4: Primary Inference
+* **Operation:** `LLM.invoke(prompt)`
+* **How it works:** The selected LLM processes the curated context and generates a clinical response.
+* **Why it matters:** The model works only on high-quality, pre-screened information, yielding highly accurate responses.
 
-Return:    {answer, sources, cache_hit, model_used, eval_metrics}
-```
+#### Phase 5: Automated Quality Evaluation
+* **Operation:** `Judge.evaluate(query, context, response)`
+* **How it works:** A separate, deterministic evaluator model grades the response on three metrics (Faithfulness, Answer Relevance, and Context Precision). 
+* **Why it matters:** Instantly flags potential hallucinations or poor retrievals before they cause clinical errors.
+
+#### Phase 5.5: Telemetry & Billing Log
+* **Operation:** `TokenBudget.record(...)`
+* **How it works:** Logs the exact number of input/output tokens used, which model was executed, and the overall time elapsed.
+* **Why it matters:** Crucial for system observability, performance monitoring, and keeping track of API costs.
+
+#### Phase 6: Cache Update
+* **Operation:** `QueryCache.set(...)`
+* **How it works:** Stores the successful response in the semantic cache.
+* **Why it matters:** Ensures that if a similar query is made within the hour, the system can instantly serve the high-quality, pre-evaluated answer.
+
+---
 
 ### Model Routing as a Design Pattern
 
