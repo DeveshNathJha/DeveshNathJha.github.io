@@ -91,7 +91,7 @@ This is vector collapse. Rare but diagnostically critical entities (specific com
 
 The fix is architectural: separate the retrieval unit from the generation unit.
 
-**Child chunks** are designed to be small and highly targeted (typically 300 to 500 characters, with a 50-character overlap). The size is deliberately calibrated to isolate single clinical statements—such as a single diagnosis alongside its ICD code, or a specific medication paired with a dosage constraint. Only these small child chunks are indexed in the vector store. Embedding a focused span minimizes semantic averaging and preserves the signal of rare or critical entities.
+**Child chunks** are designed to be small and highly targeted (typically 300 to 500 characters, with a 50-character overlap). The size is deliberately calibrated to isolate single clinical statements, such as a single diagnosis alongside its ICD code, or a specific medication paired with a dosage constraint. Only these small child chunks are indexed in the vector store. Embedding a focused span minimizes semantic averaging and preserves the signal of rare or critical entities.
 
 **Parent chunks** are larger (typically 1,500 to 2,000 characters, with a 100 to 200-character overlap) to preserve the full clinical narrative, patient history, or context. These are stored separately in a key-value store (such as Redis, MongoDB, or a local relational mapping). Each child chunk carries a `parent_id` reference in its metadata pointing back to its enclosing parent chunk.
 
@@ -193,7 +193,7 @@ The judge must never block the main query path. Any failure (timeout, parse erro
 
 ### Closing the LLMOps Loop
 
-This automated, deterministic evaluation is not just a debugging tool—it is the foundation of production LLMOps (Machine Learning Operations for Large Language Models) in high-stakes clinical deployments. While traditional software observability focuses on monitoring latency, memory, and HTTP status codes, LLM observability requires continuous quality tracking at the semantic level.
+This automated, deterministic evaluation is not just a debugging tool, as it is the foundation of production LLMOps (Machine Learning Operations for Large Language Models) in high-stakes clinical deployments. While traditional software observability focuses on monitoring latency, memory, and HTTP status codes, LLM observability requires continuous quality tracking at the semantic level.
 
 By capturing query-level Faithfulness, Answer Relevance, and Context Precision scores in real-time, engineering teams can:
 - **Detect Drift Instantly:** Automatically flag when retrieval precision degrades following new document ingestion events.
