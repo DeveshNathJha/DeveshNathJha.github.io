@@ -1,7 +1,33 @@
+/* Light Mode (Sepia/Yellowish) */
+:root {
+    --theme: #faf8f5;
+    --entry: #faf8f5;
+    --primary: #1a1a1a;
+    --secondary: #555555;
+    --content: #222222;
+}
+
+/* Dark Mode (Deep Charcoal) */
+.dark {
+    --theme: #1c1c1c;
+    --entry: #1c1c1c;
+    --primary: #e0e0e0;
+    --secondary: #a0a0a0;
+    --content: #d0d0d0;
+}
+
+/* Red Headers */
+h1, h2, h3, h4, h5, h6 {
+    color: #d32f2f !important;
+}
+
+/* Code block font overrides to prevent overlapping */
 code, pre, .highlight {
-    font-family: "Courier New", Courier, monospace !important;
-    letter-spacing: normal !important;
+    font-family: Consolas, Constantia, "Courier New", monospace !important;
+    letter-spacing: 0.05em !important; /* Forces characters apart */
     font-variant-ligatures: none !important;
     font-variant: no-contextual !important;
     font-feature-settings: "calt" 0 !important;
+    white-space: pre-wrap !important; /* Ensures long lines wrap instead of squishing */
 }
+
