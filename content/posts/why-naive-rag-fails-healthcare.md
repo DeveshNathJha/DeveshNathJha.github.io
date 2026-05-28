@@ -1,10 +1,10 @@
 ---
 title: "Why Naive RAG Fails in Healthcare and What Matters in Clinical RAG"
 date: 2026-04-28T14:30:00+05:30
-description: "An authoritative guide on why naive Retrieval-Augmented Generation (RAG) fails in clinical healthcare systems, and the production-grade design patterns (parent-child chunking, cross-encoder reranking, and dynamic model routing) needed to fix them."
-summary: "An authoritative guide on why naive Retrieval-Augmented Generation (RAG) fails in clinical healthcare systems, and the production-grade design patterns (parent-child chunking, cross-encoder reranking, and dynamic model routing) needed to fix them."
-keywords: ["Clinical RAG", "Healthcare AI", "Naive RAG Failures", "Parent-Child Chunking", "Cross-Encoder Reranking", "Medical NLP", "Vector Collapse"]
-tags: ["Clinical RAG", "Healthcare", "NLP", "Vector Databases", "Inference"]
+description: "An authoritative guide on why naive Retrieval-Augmented Generation (RAG) fails in clinical healthcare systems, and the production-grade design patterns (parent-child chunking, cross-encoder reranking, and dynamic LLMOps observability) needed to fix them."
+summary: "An authoritative guide on why naive Retrieval-Augmented Generation (RAG) fails in clinical healthcare systems, and the production-grade design patterns (parent-child chunking, cross-encoder reranking, and dynamic LLMOps observability) needed to fix them."
+keywords: ["Clinical RAG", "Healthcare AI", "Naive RAG Failures", "Parent-Child Chunking", "Cross-Encoder Reranking", "LLMOps", "Vector Collapse"]
+tags: ["Clinical RAG", "Healthcare", "NLP", "Vector Databases", "Inference", "LLMOps"]
 draft: false
 ---
 
