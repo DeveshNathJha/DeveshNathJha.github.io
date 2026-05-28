@@ -180,3 +180,38 @@ pre {
     fill: currentColor !important;
 }
 
+/* Premium Profile Picture Avatar & Header Styles */
+.author-header {
+    display: flex !important;
+    align-items: center !important;
+    gap: 1.2em !important;
+    margin-bottom: 0.5em !important;
+}
+
+.author-avatar {
+    width: 64px !important;
+    height: 64px !important;
+    border-radius: 50% !important;
+    border: 2px solid var(--border) !important;
+    object-fit: cover !important;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.06) !important;
+    background-color: var(--border) !important;
+}
+
+.author-title-container {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0.2em !important;
+}
+
+.author-title-container h3 {
+    margin: 0 !important;
+    font-size: 1.3em !important;
+    font-weight: 700 !important;
+}
+
+.author-subtitle {
+    font-size: 0.9em !important;
+    color: var(--secondary) !important;
+    font-weight: 600 !important;
+}
