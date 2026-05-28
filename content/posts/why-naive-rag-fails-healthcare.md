@@ -1,6 +1,6 @@
 ---
 title: "Why Naive RAG Fails in Healthcare and What Matters in Clinical RAG"
-date: 2026-05-28T14:30:00+05:30
+date: 2026-04-28T14:30:00+05:30
 draft: false
 ---
 
