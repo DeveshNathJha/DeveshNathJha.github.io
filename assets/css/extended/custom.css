@@ -2,22 +2,28 @@
 
 /* Light Mode (Arpit Bhayani style Soft Yellow/Cream Theme) */
 :root {
-    --theme: #faf4e8 !important;   /* Arpit's signature warm cream background */
+    --theme: #faf4e8 !important;
+    /* Arpit's signature warm cream background */
     --entry: #faf4e8 !important;
-    --primary: #2b2b2b !important; /* Soft dark charcoal text */
+    --primary: #2b2b2b !important;
+    /* Soft dark charcoal text */
     --secondary: #5f5f5f !important;
     --content: #2b2b2b !important;
-    --code-bg: #f5eedf !important; /* Harmonious warm code block background */
+    --code-bg: #f5eedf !important;
+    /* Harmonious warm code block background */
     --border: #e6dcce !important;
 }
 
 /* Dark Mode (High-Contrast Professional Charcoal + Warm Amber Accent) */
-.dark, [data-theme=dark] {
+.dark,
+[data-theme=dark] {
     --theme: #121212 !important;
     --entry: #1e1e1e !important;
-    --primary: #ffffff !important; /* Pure brightest white */
+    --primary: #ffffff !important;
+    /* Pure brightest white */
     --secondary: #b0b0b5 !important;
-    --content: #ffffff !important; /* Pure brightest white for main text readability */
+    --content: #ffffff !important;
+    /* Pure brightest white for main text readability */
     --code-bg: #1c1c1e !important;
     --border: #2c2c2e !important;
 }
@@ -37,20 +43,40 @@ html[data-theme=dark] .logo a {
 }
 
 /* Corporate Dark Red Headers (Light Mode) / Elegant Warm Amber (Dark Mode) */
-h1, h2, h3, h4, h5, h6 {
-    color: #b32424 !important; /* Professional crimson/burgundy */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    color: #b32424 !important;
+    /* Professional crimson/burgundy */
     font-weight: 700;
 }
 
-.dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6,
-[data-theme=dark] h1, [data-theme=dark] h2, [data-theme=dark] h3, [data-theme=dark] h4, [data-theme=dark] h5, [data-theme=dark] h6 {
-    color: #e6b800 !important; /* Elegant warm golden-yellow for dark mode headers */
+.dark h1,
+.dark h2,
+.dark h3,
+.dark h4,
+.dark h5,
+.dark h6,
+[data-theme=dark] h1,
+[data-theme=dark] h2,
+[data-theme=dark] h3,
+[data-theme=dark] h4,
+[data-theme=dark] h5,
+[data-theme=dark] h6 {
+    color: #e6b800 !important;
+    /* Elegant warm golden-yellow for dark mode headers */
 }
 
 /* Highlight important bold text in yellow inside dark mode */
-.dark strong, .dark b,
-[data-theme=dark] strong, [data-theme=dark] b {
-    color: #e6b800 !important; /* Make bold items stand out in gold/yellow */
+.dark strong,
+.dark b,
+[data-theme=dark] strong,
+[data-theme=dark] b {
+    color: #e6b800 !important;
+    /* Make bold items stand out in gold/yellow */
 }
 
 /* Ensure links look professional and elegant */
@@ -63,23 +89,29 @@ a:hover {
     color: #8c1c1c !important;
 }
 
-.dark a, [data-theme=dark] a {
+.dark a,
+[data-theme=dark] a {
     color: #e6b800 !important;
 }
 
-.dark a:hover, [data-theme=dark] a:hover {
+.dark a:hover,
+[data-theme=dark] a:hover {
     color: #ffcc00 !important;
 }
 
 /* Clean standard sans-serif font for code blocks to completely avoid overlapping */
-code, pre, .highlight, .chroma {
+code,
+pre,
+.highlight,
+.chroma {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
     letter-spacing: normal !important;
     word-spacing: normal !important;
     font-variant-ligatures: none !important;
     font-variant: no-contextual !important;
     font-feature-settings: "calt" 0 !important;
-    white-space: pre-wrap !important; /* Clean word-wrapping */
+    white-space: pre-wrap !important;
+    /* Clean word-wrapping */
     font-size: 0.95em !important;
     line-height: 1.6 !important;
 }
@@ -103,7 +135,7 @@ pre {
     border-radius: 12px !important;
     background-color: var(--code-bg) !important;
     border: 1px solid var(--border) !important;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03) !important;
 }
 
 .author-card h3 {
@@ -158,17 +190,20 @@ pre {
 }
 
 /* Dark mode button styling overrides */
-.dark .linkedin-btn, [data-theme=dark] .linkedin-btn {
+.dark .linkedin-btn,
+[data-theme=dark] .linkedin-btn {
     background-color: #0077b5 !important;
     color: #ffffff !important;
 }
 
-.dark .email-btn, [data-theme=dark] .email-btn {
+.dark .email-btn,
+[data-theme=dark] .email-btn {
     background-color: #e6b800 !important;
     color: #121212 !important;
 }
 
-.dark .email-btn:hover, [data-theme=dark] .email-btn:hover {
+.dark .email-btn:hover,
+[data-theme=dark] .email-btn:hover {
     background-color: #ffcc00 !important;
     color: #121212 !important;
 }
@@ -178,40 +213,4 @@ pre {
     height: 18px !important;
     margin-right: 8px !important;
     fill: currentColor !important;
-}
-
-/* Premium Profile Picture Avatar & Header Styles */
-.author-header {
-    display: flex !important;
-    align-items: center !important;
-    gap: 1.2em !important;
-    margin-bottom: 0.5em !important;
-}
-
-.author-avatar {
-    width: 64px !important;
-    height: 64px !important;
-    border-radius: 50% !important;
-    border: 2px solid var(--border) !important;
-    object-fit: cover !important;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.06) !important;
-    background-color: var(--border) !important;
-}
-
-.author-title-container {
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 0.2em !important;
-}
-
-.author-title-container h3 {
-    margin: 0 !important;
-    font-size: 1.3em !important;
-    font-weight: 700 !important;
-}
-
-.author-subtitle {
-    font-size: 0.9em !important;
-    color: var(--secondary) !important;
-    font-weight: 600 !important;
 }

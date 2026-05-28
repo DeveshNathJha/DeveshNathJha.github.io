@@ -191,6 +191,12 @@ If the composite score falls below $T_{\text{clinical}} < 0.70$ or if the Faithf
 2. **Abstain:** Display a pre-formatted, safe fallback message: *"I am unable to confidently summarize this clinical context based on the retrieved records. Please review the patient's primary documents directly."*
 3. **Escalate:** Publish the failed transaction to a clinical review queue for manual administrative inspection.
 
+### 6. The Compliance Blueprint: Citation and Clinician-in-the-Loop
+For high-stakes clinical deployments, clinical accuracy is only half the battle. Regulatory bodies (such as the FDA under Software as a Medical Device, or SaMD, frameworks) and clinical safety standards demand extreme auditability:
+
+* **Provenance and Citation Tracking:** A production clinical RAG pipeline must never return a plain text answer. Every generated diagnostic assertion or therapeutic recommendation must be decorated with explicit inline citations. These citations map directly to the source document's filename, page number, and original OCR text snippet in the metadata database, giving physicians the power of instant auditability.
+* **Clinician-in-the-Loop Oversight:** While automated LLM judges flag quality regressions, high-risk clinical decisions require human-in-the-loop oversight. Queries flagging a low-confidence score are routed to clinical triage queues where physicians can manually review, override, and log modifications to the RAG outputs, satisfying rigorous HIPAA documentation guidelines.
+
 ---
 
 ## Standard Production Execution Trace
@@ -319,15 +325,8 @@ Ultimately, clinical RAG systems do not fail because the LLM is weak. They fail 
 ---
 
 <div class="author-card">
-  <div class="author-header">
-    <img class="author-avatar" src="/devesh.jpg" alt="Devesh Nath Jha">
-    <div class="author-title-container">
-      <h3>Connect & Collaborate</h3>
-      <span class="author-subtitle">By Devesh Nath Jha</span>
-    </div>
-  </div>
-  <p style="margin-top: 1em !important;">Have questions about scaling RAG pipelines in high-stakes clinical domains, or interested in collaborating on robust, production-grade clinical AI applications? Let's connect!</p>
-
+  <h3>Connect & Collaborate</h3>
+  <p>Have questions about scaling RAG pipelines in high-stakes clinical domains, or interested in collaborating on robust, production-grade clinical AI applications? Let's connect!</p>
   <div class="author-links">
     <a href="https://www.linkedin.com/in/jha-devesh/" target="_blank" class="author-link-btn linkedin-btn">
       <svg class="author-icon" viewBox="0 0 24 24"><path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.32 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.79M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z"/></svg>
