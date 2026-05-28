@@ -11,21 +11,34 @@
     --border: #e5e5ea;
 }
 
-/* Dark Mode (High-Contrast Professional Charcoal) */
+/* Dark Mode (High-Contrast Professional Charcoal + Warm Amber Accent) */
 .dark {
     --theme: #121212;
     --entry: #1e1e1e;
-    --primary: #ffffff;
-    --secondary: #a1a1a6;
-    --content: #f5f5f7; /* Very bright, high contrast, clean white/gray text */
-    --code-bg: #1e1e1e;
+    --primary: #ffffff !important; /* Pure brightest white */
+    --secondary: #b0b0b5;
+    --content: #ffffff !important; /* Pure brightest white for main text readability */
+    --code-bg: #1c1c1e;
     --border: #2c2c2e;
 }
 
-/* Corporate Dark Red Headers */
+/* Header/Logo styling: White in dark mode, charcoal in light mode */
+.logo a {
+    color: #111111 !important;
+}
+
+.dark .logo a {
+    color: #ffffff !important; /* Ensure "Devesh Nath Jha" is solid white in dark mode */
+}
+
+/* Corporate Dark Red Headers (Light Mode) / Elegant Warm Amber (Dark Mode) */
 h1, h2, h3, h4, h5, h6 {
-    color: #b32424 !important; /* Professional crimson/burgundy instead of bright red */
+    color: #b32424 !important; /* Professional crimson/burgundy */
     font-weight: 700;
+}
+
+.dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6 {
+    color: #e6b800 !important; /* Elegant warm golden-yellow for high contrast professional dark mode */
 }
 
 /* Ensure links look professional and elegant */
@@ -36,6 +49,14 @@ a {
 
 a:hover {
     color: #8c1c1c;
+}
+
+.dark a {
+    color: #e6b800;
+}
+
+.dark a:hover {
+    color: #ffcc00;
 }
 
 /* Standard Monospace Code Blocks - High Readability, No Overlap */

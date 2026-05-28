@@ -173,12 +173,9 @@ When a response grades C or F, the telemetry on that query includes the exact ch
 
 The judge must never block the main query path. Any failure (timeout, parse error, unexpected output) should return null scores and let the primary response through. At approximately $0.000025 per evaluation call, this is not a meaningful cost constraint.
 
----
 ## Standard Production Execution Trace
 
-A production-grade clinical RAG system must operate with absolute predictability and observability. Rather than treating the retrieval and generation loop as a black box, the execution flow is broken down into structured, independently timed, and logged phases. 
-
-Here is the exact step-by-step lifecycle of a production query inside `get_response()`, explained in clear engineering terms:
+While individual clinical RAG implementations vary widely depending on their specific technical stack, regulatory constraints, and scale, establishing a clear baseline sequence is critical. Below is a comprehensive reference blueprint for a production-grade execution trace inside a `get_response()` loop. Rather than treating retrieval and generation as a black box, this flow is broken down into structured, independently timed, and logged phases to ensure maximum safety, observability, and cost-efficiency.
 
 ---
 
