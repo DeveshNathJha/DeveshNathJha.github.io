@@ -1,8 +1,8 @@
 ---
 title: "Why Naive RAG Fails in Healthcare and What Matters in Clinical RAG"
 date: 2026-04-28T14:30:00+05:30
-description: "An authoritative guide on why naive Retrieval-Augmented Generation (RAG) fails in clinical healthcare systems, and the production-grade design patterns (parent-child chunking, cross-encoder reranking, and dynamic LLMOps observability) needed to fix them."
-summary: "An authoritative guide on why naive Retrieval-Augmented Generation (RAG) fails in clinical healthcare systems, and the production-grade design patterns (parent-child chunking, cross-encoder reranking, and dynamic LLMOps observability) needed to fix them."
+description: "An in-depth guide on why naive Retrieval-Augmented Generation (RAG) fails in clinical healthcare systems, and the production-grade design patterns (parent-child chunking, cross-encoder reranking, and dynamic LLMOps observability) needed to fix them."
+summary: "An in-depth guide on why naive Retrieval-Augmented Generation (RAG) fails in clinical healthcare systems, and the production-grade design patterns (parent-child chunking, cross-encoder reranking, and dynamic LLMOps observability) needed to fix them."
 keywords: ["Clinical RAG", "Healthcare AI", "Naive RAG Failures", "Parent-Child Chunking", "Cross-Encoder Reranking", "LLMOps", "Vector Collapse"]
 tags: ["Clinical RAG", "Healthcare", "NLP", "Vector Databases", "Inference", "LLMOps"]
 draft: false
@@ -117,11 +117,11 @@ While Parent-Child chunking is a standard production design pattern, engineers m
 
 Furthermore, clinical history is fundamentally longitudinal. A medical chart from yesterday is vastly more relevant than one from five years ago. To handle this, the ranking algorithm must implement **Temporal decay weighting**:
 
-$$\text{Temporal Score} = \text{RRF Score} \cdot e^{-\lambda \cdot t}$$
+**Temporal Score = RRF Score * e^(-λt)**
 
 Where:
-* $t$ represents the age of the document in days relative to the query.
-* $\lambda$ is a decay coefficient that must be calibrated by domain: high decay (volatile inpatient vital logs) vs. near-zero decay (stable baseline surgical records or permanent allergy profiles).
+* **t** represents the age of the document in days relative to the query.
+* **λ (lambda)** is a decay coefficient that must be calibrated by domain: high decay (volatile inpatient vital logs) vs. near-zero decay (stable baseline surgical records or permanent allergy profiles).
 
 ---
 
@@ -186,7 +186,7 @@ Automated judges are highly capable, but they are not infallible. Research indic
 
 Additionally, under low evaluation scores, the system must trigger a **Clinical Fallback pathway** (safe abstention):
 
-If the composite score falls below $T_{\text{clinical}} < 0.70$ or if the Faithfulness score drops below $0.80$:
+If the composite score falls below T_clinical < 0.70 or if the Faithfulness score drops below 0.80:
 1. **Redact:** Intercept the generated answer to prevent it from reaching the UI.
 2. **Abstain:** Display a pre-formatted, safe fallback message: *"I am unable to confidently summarize this clinical context based on the retrieved records. Please review the patient's primary documents directly."*
 3. **Escalate:** Publish the failed transaction to a clinical review queue for manual administrative inspection.
