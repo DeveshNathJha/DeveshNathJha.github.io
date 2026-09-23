@@ -8,6 +8,8 @@ tags: ["Clinical RAG", "Healthcare", "NLP", "Vector Databases", "Inference", "LL
 draft: false
 ---
 
+> *Disclaimer: This article discusses architectural and systems engineering considerations for clinical AI infrastructure. It is intended strictly for informational and educational purposes and does not constitute medical advice, clinical guidance, or regulatory compliance counsel.*
+
 In a sandbox, you load a handful of clean PDFs, slice them at 512 tokens, write vectors to a local FAISS index, and wire the components together. The outputs look reasonable. In a production clinical deployment, that same architecture breaks before a single query reaches the model. Nothing in the logs tells you where.
 
 > **A Typical Clinical Failure Cascade:** A patient with chronic kidney disease presents with acute pain. The hospital's naive RAG system processes a scanned medical history fax. The OCR engine silently drops a low-contrast page listing a Stage 4 renal impairment diagnosis. Without this parent context, the retriever fails to surface the impairment chunk, and the LLM confidently generates a recommendation for a high-dose NSAID like Ibuprofen. The downstream result is an avoidable, severe acute-on-chronic kidney injury. The model did not fail, but the pipeline failed long before inference.
@@ -258,7 +260,7 @@ Establishing a clear execution lifecycle is critical for keeping track of perfor
 #### Phase 3.5: Intelligent Model Routing
 * **Operation:** `select_model(query, tokens_input)`
 * **How it works:** Routes to a faster, low-cost model *only* if the query is short, lacks complex clinical keywords (like *contraindication* or *pathophysiology*), and token count is low. Otherwise, routes to a high-capacity model.
-* **Why it matters:** resaves up to 90% in inference costs on simple queries while preserving frontier model power for complex clinical reasoning.
+* **Why it matters:** Saves up to 90% in inference costs on simple queries while preserving frontier model power for complex clinical reasoning.
 
 #### Phase 4: Primary Inference
 * **Operation:** `LLM.invoke(prompt)`
@@ -324,10 +326,26 @@ Ultimately, clinical RAG systems do not fail because the LLM is weak. They fail 
 
 ---
 
+## 💬 Community Discussion
+
+Join the ongoing discussion and share your thoughts on this architecture on Reddit:
+
+<blockquote class="reddit-embed-bq" style="height:316px" data-embed-height="316">
+<a href="https://www.reddit.com/r/Rag/comments/1wnzmap/why_naive_rag_fails_in_production_healthcare_a/">Why Naive RAG Fails in Production Healthcare: A Deep Dive into Parent-Child Chunking, Cross-Encoders &amp; Clinical Evaluation</a><br> by
+<a href="https://www.reddit.com/user/JhaDevesh/">u/JhaDevesh</a> in
+<a href="https://www.reddit.com/r/Rag/">Rag</a>
+</blockquote><script async="" src="https://embed.reddit.com/widgets.js" charset="UTF-8"></script>
+
+---
+
 <div class="author-card">
   <h3>Connect & Collaborate</h3>
   <p>Have questions about scaling RAG pipelines in high-stakes clinical domains, or interested in collaborating on robust, production-grade clinical AI applications? Let's connect!</p>
   <div class="author-links">
+    <a href="https://www.reddit.com/user/JhaDevesh/" target="_blank" class="author-link-btn reddit-btn" style="background: #FF4500; color: #fff;">
+      <svg class="author-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.01 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056l-2.597-.547-.8 3.747c1.824.07 3.48.632 4.674 1.488.308-.309.73-.491 1.207-.491.968 0 1.754.786 1.754 1.754 0 .716-.435 1.333-1.01 1.614a3.111 3.111 0 0 1 .042.52c0 2.694-3.13 4.87-7.004 4.87-3.874 0-7.004-2.176-7.004-4.87 0-.183.015-.366.043-.534A1.748 1.748 0 0 1 4.028 12c0-.968.786-1.754 1.754-1.754.463 0 .898.196 1.207.49 1.207-.883 2.878-1.43 4.744-1.487l.885-4.182a.342.342 0 0 1 .14-.197.35.35 0 0 1 .238-.042l2.906.617a1.214 1.214 0 0 1 1.108-.703zM9.25 12C8.561 12 8 12.562 8 13.25c0 .687.561 1.248 1.25 1.248.687 0 1.248-.561 1.248-1.249 0-.688-.561-1.249-1.249-1.249zm5.5 0c-.687 0-1.248.561-1.248 1.25 0 .687.561 1.248 1.249 1.248.688 0 1.249-.561 1.249-1.249 0-.687-.562-1.249-1.25-1.249zm-5.466 3.99a.327.327 0 0 0-.231.094.33.33 0 0 0 0 .463c.842.842 2.484.913 2.961.913.477 0 2.105-.056 2.961-.913a.361.361 0 0 0 .029-.463.33.33 0 0 0-.464 0c-.547.533-1.684.73-2.512.73-.828 0-1.979-.197-2.512-.73a.326.326 0 0 0-.232-.095z"/></svg>
+      Reddit Profile
+    </a>
     <a href="https://www.linkedin.com/in/jha-devesh/" target="_blank" class="author-link-btn linkedin-btn">
       <svg class="author-icon" viewBox="0 0 24 24"><path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.32 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.79M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z"/></svg>
       LinkedIn Profile

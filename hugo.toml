@@ -3,11 +3,20 @@ languageCode = "en-us"
 title = "Devesh Nath Jha"
 theme = "PaperMod"
 
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+
 [params]
   author = "Devesh Nath Jha"
   description = "Engineering, AI, and Systems Architecture"
   ShowReadingTime = true
   ShowToc = true
+
+  [[params.socialIcons]]
+    name = "reddit"
+    url = "https://www.reddit.com/user/JhaDevesh/"
 
   [[params.socialIcons]]
     name = "linkedin"
