@@ -1,0 +1,61 @@
+baseURL = "https://deveshnathjha.github.io/"
+languageCode = "en-us"
+title = "Devesh Nath Jha"
+theme = "PaperMod"
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+
+[menu]
+  [[menu.main]]
+    identifier = "posts"
+    name = "Posts"
+    url = "/posts/"
+    weight = 10
+  [[menu.main]]
+    identifier = "projects"
+    name = "Projects"
+    url = "/projects/"
+    weight = 20
+  [[menu.main]]
+    identifier = "tags"
+    name = "Tags"
+    url = "/tags/"
+    weight = 30
+
+[params]
+  author = "Devesh Nath Jha"
+  description = "Engineering notes on RAG, retrieval, evaluation and edge AI systems by Devesh Nath Jha."
+  defaultTheme = "auto"
+  ShowReadingTime = true
+  ShowToc = true
+  ShowBreadCrumbs = true
+  ShowCodeCopyButtons = true
+  ShowPostNavLinks = true
+
+  [params.homeInfoParams]
+    Title = "Hi, I'm Devesh"
+    Content = """
+I build and write about AI systems that have to work outside a demo: retrieval-augmented generation (RAG), \
+retrieval quality, LLM evaluation and edge AI. B.Tech in Computer Science (AI & ML); previously an AI intern at KPMG India.
+
+See my [projects](/projects/) or read the posts below.
+"""
+
+  [[params.socialIcons]]
+    name = "github"
+    url = "https://github.com/DeveshNathJha"
+
+  [[params.socialIcons]]
+    name = "linkedin"
+    url = "https://www.linkedin.com/in/jha-devesh/"
+
+  [[params.socialIcons]]
+    name = "reddit"
+    url = "https://www.reddit.com/user/JhaDevesh/"
+
+  [[params.socialIcons]]
+    name = "email"
+    url = "mailto:deveshjnv2002@gmail.com"

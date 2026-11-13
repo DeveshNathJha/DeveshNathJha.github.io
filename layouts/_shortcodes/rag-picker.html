@@ -1,0 +1,282 @@
+{{- /*
+  Interactive RAG Architecture Picker — a decision-tree shortcode.
+  Usage in a post: {{< rag-picker >}}
+  No libraries. Colours come from the site's CSS variables, so it follows light and dark mode.
+  Without JavaScript, the decision table in the post still gives the same guidance.
+*/ -}}
+{{- $id := printf "ragpicker-%d" .Ordinal -}}
+<div class="ragpicker" id="{{ $id }}">
+
+  <div class="rp-header">
+    <span class="rp-heading">Which RAG architecture fits your problem?</span>
+    <span class="rp-sub">Answer 3 questions to get a recommendation.</span>
+  </div>
+
+  <div class="rp-body">
+    <!-- Question screens -->
+    <div class="rp-screen rp-active" data-screen="q1">
+      <div class="rp-step-badge">Question 1 of 3</div>
+      <p class="rp-question">What best describes your data?</p>
+      <div class="rp-options">
+        <button type="button" data-next="q2" class="rp-opt"><span class="rp-opt-label">Unstructured text</span><span class="rp-opt-hint">PDFs, articles, documentation, reports</span></button>
+        <button type="button" data-next="r-sql" class="rp-opt"><span class="rp-opt-label">Structured tables</span><span class="rp-opt-hint">SQL databases, spreadsheets, CSV files</span></button>
+        <button type="button" data-next="r-graph" class="rp-opt"><span class="rp-opt-label">Connected entities</span><span class="rp-opt-hint">People, drugs, legal cases, relationships between things</span></button>
+        <button type="button" data-next="r-agentic" class="rp-opt"><span class="rp-opt-label">Multiple different sources</span><span class="rp-opt-hint">Documents + databases + APIs + web, all at once</span></button>
+      </div>
+    </div>
+
+    <div class="rp-screen" data-screen="q2">
+      <div class="rp-step-badge">Question 2 of 3</div>
+      <p class="rp-question">What matters more for your queries?</p>
+      <div class="rp-options">
+        <button type="button" data-next="q3" data-tag="vector" class="rp-opt"><span class="rp-opt-label">Semantic meaning</span><span class="rp-opt-hint">"heart attack" should match "myocardial infarction"</span></button>
+        <button type="button" data-next="q3" data-tag="bm25" class="rp-opt"><span class="rp-opt-label">Exact terms</span><span class="rp-opt-hint">Drug names, ICD codes, section numbers, identifiers</span></button>
+        <button type="button" data-next="q3" data-tag="hybrid" class="rp-opt"><span class="rp-opt-label">Both</span><span class="rp-opt-hint">Mix of semantic questions and exact-term lookups</span></button>
+      </div>
+    </div>
+
+    <div class="rp-screen" data-screen="q3">
+      <div class="rp-step-badge">Question 3 of 3</div>
+      <p class="rp-question">What happens if the system gives a wrong answer?</p>
+      <div class="rp-options">
+        <button type="button" data-next="result" data-stakes="high" class="rp-opt"><span class="rp-opt-label">It is dangerous</span><span class="rp-opt-hint">Healthcare, legal, finance — wrong answers cause real harm</span></button>
+        <button type="button" data-next="result" data-stakes="low" class="rp-opt"><span class="rp-opt-label">It is annoying but not harmful</span><span class="rp-opt-hint">Internal tools, chatbots, documentation assistants</span></button>
+      </div>
+    </div>
+
+    <!-- Static result screens (for Q1 direct answers) -->
+    <div class="rp-screen" data-screen="r-sql">
+      <div class="rp-result-badge">Recommendation</div>
+      <h4 class="rp-result-title">Text-to-SQL RAG</h4>
+      <p class="rp-result-text">Your data is already structured. Instead of embedding rows into vectors, convert the user's question into a SQL query and run it directly against your database. Libraries like LangChain's <code>SQLDatabaseChain</code> or <code>vanna.ai</code> can help. No embedding model or vector database needed.</p>
+      <p class="rp-result-note">This is not RAG in the traditional sense, but it solves the same problem: answering natural-language questions over your own data.</p>
+      <button type="button" class="rp-restart">Start over</button>
+    </div>
+
+    <div class="rp-screen" data-screen="r-graph">
+      <div class="rp-result-badge">Recommendation</div>
+      <h4 class="rp-result-title">Graph RAG</h4>
+      <p class="rp-result-text">Your questions need to follow relationships between entities — drug interactions, case precedents, supply chains. Build a knowledge graph (e.g. Neo4j) and retrieve by graph traversal instead of, or alongside, vector similarity.</p>
+      <p class="rp-result-note">Graph construction from unstructured text is expensive and error-prone. Start with a small, well-defined entity set and expand gradually. Consider adding a self-correction layer if the domain is high-stakes.</p>
+      <button type="button" class="rp-restart">Start over</button>
+    </div>
+
+    <div class="rp-screen" data-screen="r-agentic">
+      <div class="rp-result-badge">Recommendation</div>
+      <h4 class="rp-result-title">Agentic RAG</h4>
+      <p class="rp-result-text">Your questions span multiple data sources, so no single retrieval method covers everything. Use an LLM agent that can choose which tool to call — vector search for documents, SQL for tables, graph traversal for relationships, web search for recent information.</p>
+      <p class="rp-result-note">Add guardrails: maximum iterations, timeouts, and a fallback to simpler retrieval. Agents can loop or pick the wrong tool, so test thoroughly with real queries.</p>
+      <button type="button" class="rp-restart">Start over</button>
+    </div>
+
+    <!-- Dynamic result screen (filled by JS based on Q2 + Q3 answers) -->
+    <div class="rp-screen" data-screen="result">
+      <div class="rp-result-badge">Recommendation</div>
+      <h4 class="rp-result-title" id="{{ $id }}-rtitle"></h4>
+      <p class="rp-result-text" id="{{ $id }}-rtext"></p>
+      <p class="rp-result-note" id="{{ $id }}-rnote"></p>
+      <button type="button" class="rp-restart">Start over</button>
+    </div>
+  </div>
+
+  <noscript><p class="rp-noscript">Turn on JavaScript to use the interactive picker. The decision table below gives the same guidance.</p></noscript>
+</div>
+
+<style>
+.ragpicker {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--callout-bg, var(--code-bg));
+  overflow: hidden;
+  margin: 1.5em 0;
+  font-family: inherit;
+}
+.rp-header {
+  padding: 1.2em 1.5em;
+  background: var(--code-bg);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+}
+.rp-heading {
+  font-size: 1.05em;
+  font-weight: 700;
+  color: var(--primary);
+}
+.rp-sub {
+  font-size: 0.88em;
+  color: var(--secondary);
+}
+.rp-body {
+  padding: 1.5em;
+  min-height: 220px;
+}
+.rp-screen { display: none; }
+.rp-screen.rp-active { display: block; animation: rp-fadeIn 0.3s ease; }
+@keyframes rp-fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+.rp-step-badge, .rp-result-badge {
+  display: inline-block;
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.25em 0.7em;
+  border-radius: 6px;
+  margin-bottom: 0.8em;
+}
+.rp-step-badge {
+  background: var(--accent, #a8321f);
+  color: #fff;
+}
+.rp-result-badge {
+  background: #16803c;
+  color: #fff;
+}
+.rp-question {
+  font-size: 1.1em;
+  font-weight: 600;
+  color: var(--primary);
+  margin: 0 0 1em;
+  line-height: 1.5;
+}
+.rp-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+}
+.rp-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+  text-align: left;
+  padding: 0.9em 1.1em;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--theme);
+  color: var(--primary);
+  font-size: 0.95em;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+  font-family: inherit;
+  line-height: 1.4;
+}
+.rp-opt:hover {
+  border-color: var(--accent, #a8321f);
+  background: var(--code-bg);
+  transform: translateX(4px);
+}
+.rp-opt-label {
+  font-weight: 600;
+  color: var(--primary);
+}
+.rp-opt-hint {
+  font-weight: 400;
+  font-size: 0.85em;
+  color: var(--secondary);
+}
+.rp-result-title {
+  font-size: 1.15em;
+  font-weight: 700;
+  color: var(--primary);
+  margin: 0 0 0.6em;
+}
+.rp-result-text {
+  color: var(--content);
+  line-height: 1.7;
+  margin: 0 0 0.6em;
+}
+.rp-result-note {
+  font-size: 0.88em;
+  color: var(--secondary);
+  font-style: italic;
+  margin: 0 0 1.2em;
+  padding-left: 0.8em;
+  border-left: 3px solid var(--border);
+}
+.rp-restart {
+  padding: 0.5em 1.2em;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--theme);
+  color: var(--secondary);
+  font-size: 0.88em;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.rp-restart:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+.rp-noscript {
+  padding: 1em;
+  color: var(--secondary);
+  font-style: italic;
+}
+@media (max-width: 600px) {
+  .rp-body { padding: 1em; }
+  .rp-opt { padding: 0.7em 0.9em; font-size: 0.9em; }
+}
+</style>
+
+<script>
+(function(){
+  var root = document.getElementById("{{ $id }}");
+  if (!root) return;
+
+  var tag = "";   // vector | bm25 | hybrid
+  var stakes = "";  // high | low
+
+  var results = {
+    "vector-low":  { title: "Vector RAG",                            text: "Semantic vector search will handle your paraphrase-heavy queries well. Use a model like <code>all-MiniLM-L6-v2</code> with FAISS or Chroma. Add parent-child chunking if your documents are long.", note: "Consider adding BM25 later if you notice missed exact terms. Monitor retrieval quality with a small test set of real queries." },
+    "vector-high": { title: "Vector RAG + Self-Correcting (CRAG)",   text: "Start with vector search, then wrap it in a self-correction layer: a cross-encoder reranker to filter weak matches, an LLM judge to score faithfulness, and a refusal path when nothing is relevant enough.", note: "In high-stakes domains, a wrong answer is worse than no answer. The self-correction layer catches retrieval failures before they reach the user. Threshold tuning on real queries is essential." },
+    "bm25-low":    { title: "Keyword RAG (BM25)",                    text: "BM25 keyword search (Elasticsearch, OpenSearch) will reliably find the exact terms your users are looking for — drug names, codes, legal references. It is fast, well-understood, and does not require an embedding model or GPU.", note: "If users start asking semantic questions where wording varies, consider adding vector search for a hybrid approach." },
+    "bm25-high":   { title: "Keyword RAG (BM25) + Self-Correcting",  text: "BM25 will handle the exact-term lookups reliably. Add a self-correction layer: verify that retrieved passages actually answer the question before generating, and refuse when they do not.", note: "Exact-match retrieval is already precise, but self-correction catches cases where the right terms appear in an irrelevant context." },
+    "hybrid-low":  { title: "Hybrid RAG (Vector + BM25)",            text: "Run vector search and BM25 in parallel, then merge with Reciprocal Rank Fusion. This covers both semantic similarity and exact-term matching — a common default for production systems.", note: "This is the architecture many production RAG systems converge on. It handles both 'what does this mean?' and 'find this exact code' queries." },
+    "hybrid-high": { title: "Hybrid RAG + Self-Correcting (CRAG)",   text: "Hybrid retrieval (vector + BM25) for broad coverage, plus a self-correction layer (reranker + LLM judge + refusal) for safety. This combination addresses both retrieval coverage and answer reliability.", note: "My Healthcare RAG system uses a version of this: vector search + reranker + LLM judge. Adding BM25 for hybrid retrieval is the next improvement I would make." }
+  };
+
+  function show(screenName) {
+    var screens = root.querySelectorAll(".rp-screen");
+    for (var i = 0; i < screens.length; i++) {
+      screens[i].classList.remove("rp-active");
+    }
+    var target = root.querySelector('[data-screen="' + screenName + '"]');
+    if (target) target.classList.add("rp-active");
+  }
+
+  function fillResult() {
+    var key = tag + "-" + stakes;
+    var r = results[key];
+    if (!r) return;
+    var titleEl = document.getElementById("{{ $id }}-rtitle");
+    var textEl  = document.getElementById("{{ $id }}-rtext");
+    var noteEl  = document.getElementById("{{ $id }}-rnote");
+    if (titleEl) titleEl.innerHTML = r.title;
+    if (textEl)  textEl.innerHTML  = r.text;
+    if (noteEl)  noteEl.innerHTML  = r.note;
+  }
+
+  root.addEventListener("click", function(e) {
+    var btn = e.target.closest(".rp-opt");
+    if (btn) {
+      if (btn.dataset.tag) tag = btn.dataset.tag;
+      if (btn.dataset.stakes) stakes = btn.dataset.stakes;
+      var next = btn.dataset.next;
+      if (next === "result") {
+        fillResult();
+      }
+      if (next) show(next);
+      return;
+    }
+    var restart = e.target.closest(".rp-restart");
+    if (restart) {
+      tag = "";
+      stakes = "";
+      show("q1");
+    }
+  });
+})();
+</script>

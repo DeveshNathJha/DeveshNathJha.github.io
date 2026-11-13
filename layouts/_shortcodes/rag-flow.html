@@ -1,0 +1,273 @@
+{{- /*
+  Interactive, step-through RAG query flow.
+  Usage in a post: {{< rag-flow >}}
+  No libraries. Colours come from the site's CSS variables, so it follows light and dark mode.
+  Without JavaScript the text diagram in the post still explains the same flow.
+*/ -}}
+{{- $id := printf "ragflow-%d" .Ordinal -}}
+<div class="ragflow" id="{{ $id }}">
+  <div class="ragflow-scenarios" role="group" aria-label="Choose a scenario">
+    <button type="button" class="ragflow-scn is-on" data-scn="followup">Follow-up question</button>
+    <button type="button" class="ragflow-scn" data-scn="repeat">Same question again</button>
+    <button type="button" class="ragflow-scn" data-scn="refuse">Question the documents can't answer</button>
+  </div>
+
+  <ol class="ragflow-steps" aria-hidden="true">
+    <li data-node="question"><span class="rf-dot"></span>Question arrives</li>
+    <li data-node="rewrite"><span class="rf-dot"></span>Rewrite follow-up into a standalone question</li>
+    <li data-node="cache"><span class="rf-dot"></span>Exact-match cache check</li>
+    <li data-node="hit" class="rf-branch"><span class="rf-dot"></span>&#8627; cache hit: return the stored answer</li>
+    <li data-node="search"><span class="rf-dot"></span>Vector search: top 10 small chunks</li>
+    <li data-node="rerank"><span class="rf-dot"></span>Cross-encoder rerank and filter</li>
+    <li data-node="refuse" class="rf-branch"><span class="rf-dot"></span>&#8627; nothing relevant: refuse</li>
+    <li data-node="context"><span class="rf-dot"></span>Swap in parent passages, apply token budget</li>
+    <li data-node="route"><span class="rf-dot"></span>Route to a small or large model</li>
+    <li data-node="answer"><span class="rf-dot"></span>Generate the answer with citations</li>
+    <li data-node="judge"><span class="rf-dot"></span>Judge scores the answer</li>
+    <li data-node="store"><span class="rf-dot"></span>Record usage, cache the answer</li>
+  </ol>
+
+  <div class="ragflow-panel" aria-live="polite">
+    <div class="ragflow-count"></div>
+    <div class="ragflow-title"></div>
+    <p class="ragflow-text"></p>
+    <pre class="ragflow-data"><code></code></pre>
+  </div>
+
+  <div class="ragflow-controls">
+    <button type="button" data-act="back" aria-label="Previous step">&#9664; Back</button>
+    <button type="button" data-act="play" aria-label="Play the steps automatically">&#9654; Play</button>
+    <button type="button" data-act="next" aria-label="Next step">Next &#9654;</button>
+    <button type="button" data-act="reset" aria-label="Start again">&#8635; Restart</button>
+  </div>
+  <noscript><p class="ragflow-text">Turn on JavaScript to step through this diagram. The text diagram below shows the same flow.</p></noscript>
+</div>
+
+<style>
+.ragflow {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--callout-bg, var(--code-bg));
+  padding: 1rem;
+  margin: 1.5rem 0;
+  font-size: 0.95rem;
+}
+.ragflow button {
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.35em 0.8em;
+  background: var(--theme);
+  color: var(--primary);
+}
+.ragflow button:hover { border-color: var(--accent, #a8321f); }
+.ragflow button:focus-visible { outline: 2px solid var(--accent, #a8321f); outline-offset: 2px; }
+.ragflow-scenarios { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.9rem; }
+.ragflow-scn.is-on { background: var(--accent, #a8321f); border-color: var(--accent, #a8321f); color: var(--theme); font-weight: 600; }
+.ragflow-steps { list-style: none; margin: 0 0 0.9rem; padding: 0; }
+.md-content .ragflow-steps li {
+  position: relative;
+  margin: 0;
+  padding: 0.28rem 0 0.28rem 1.9rem;
+  color: var(--secondary);
+  line-height: 1.4;
+  transition: color 0.2s ease, opacity 0.2s ease;
+}
+.ragflow-steps li::before {
+  content: "";
+  position: absolute;
+  left: 0.55rem;
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid var(--border);
+}
+.ragflow-steps li:first-child::before { top: 50%; }
+.ragflow-steps li:last-child::before { bottom: 50%; }
+.ragflow-steps .rf-dot {
+  position: absolute;
+  left: 0.2rem;
+  top: 50%;
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-top: -0.4rem;
+  border-radius: 50%;
+  background: var(--theme);
+  border: 2px solid var(--border);
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+.md-content .ragflow-steps li.rf-branch { padding-left: 2.9rem; font-size: 0.88em; }
+.ragflow-steps li.rf-branch .rf-dot { left: 1.2rem; }
+.ragflow-steps li.is-done { color: var(--content); }
+.ragflow-steps li.is-done .rf-dot { background: var(--accent, #a8321f); border-color: var(--accent, #a8321f); }
+.ragflow-steps li.is-active { color: var(--primary); font-weight: 600; }
+.ragflow-steps li.is-active .rf-dot { background: var(--accent, #a8321f); border-color: var(--accent, #a8321f); transform: scale(1.35); box-shadow: 0 0 0 4px var(--border); }
+.ragflow-steps li.is-skipped { opacity: 0.4; text-decoration: line-through; }
+.ragflow-panel { border-top: 1px solid var(--border); padding-top: 0.8rem; min-height: 11rem; }
+.ragflow-count { font-size: 0.8rem; color: var(--secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+.ragflow-title { font-weight: 700; color: var(--primary); margin: 0.15rem 0 0.35rem; }
+.md-content .ragflow-text { margin: 0 0 0.6rem; color: var(--content); }
+.md-content .ragflow-data { margin: 0; font-size: 0.82rem; white-space: pre-wrap; }
+.md-content .ragflow-data code { white-space: pre-wrap; word-break: break-word; }
+.ragflow-controls { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.9rem; }
+.ragflow-controls button:disabled { opacity: 0.45; cursor: default; }
+@media (prefers-reduced-motion: reduce) {
+  .ragflow *, .ragflow *::before { transition: none !important; }
+}
+</style>
+
+<script>
+(function () {
+  var root = document.getElementById("{{ $id }}");
+  if (!root) return;
+
+  var MAIN = ["question", "rewrite", "cache", "search", "rerank", "context", "route", "answer", "judge", "store"];
+
+  var SCENARIOS = {
+    followup: [
+      { node: "question", title: "A question arrives",
+        text: "A user is in the middle of a chat about a blood-pressure drug and asks a short follow-up.",
+        data: "Chat history: \"What is amlodipine used for?\"\nNew question: \"What about its dose?\"" },
+      { node: "rewrite", title: "Rewrite it into a standalone question",
+        text: "\"Its dose\" means nothing on its own, to a search engine or to a cache. One quick LLM call uses the chat history to rewrite it.",
+        data: "\"What about its dose?\"\n  -> \"What is the usual dose of amlodipine?\"" },
+      { node: "cache", title: "Check the exact-match cache",
+        text: "The normalized question and the document filter are hashed. Nothing is stored under this hash yet, so the pipeline continues.",
+        data: "key = sha256(\"what is the usual dose of amlodipine?|all documents\")\nresult: MISS" },
+      { node: "search", title: "Search the small child chunks",
+        text: "Vector search returns the 10 child chunks closest in meaning. Close in meaning is not the same as useful, so this list is noisy.",
+        data: "0.82  guideline.pdf p.2   \"Amlodipine: initial dose 5 mg once daily...\"\n0.79  guideline.pdf p.2   \"Maximum dose 10 mg once daily...\"\n0.77  leaflet.pdf p.1     \"Amlodipine belongs to a group of medicines...\"\n0.74  guideline.pdf p.7   \"Dose adjustment in hepatic impairment...\"\n... 6 more" },
+      { node: "rerank", title: "Rerank and filter",
+        text: "A cross-encoder reads the question together with each chunk and scores how well it answers it. Three chunks pass the minimum score; the other seven are dropped.",
+        data: "0.97  keep   initial dose 5 mg once daily\n0.91  keep   maximum dose 10 mg once daily\n0.42  keep   dose adjustment in hepatic impairment\n0.03  drop   \"belongs to a group of medicines...\"\n... 6 more dropped" },
+      { node: "context", title: "Build the context",
+        text: "Each kept child is swapped for its larger parent passage, the best one first, and the total is kept inside the token budget.",
+        data: "3 parent passages, best first\n1,840 tokens used of a 6,000-token budget" },
+      { node: "route", title: "Pick a model",
+        text: "Short question, no complex keywords, small context: a smaller, cheaper model is enough. (Example rule; tune it on real questions.)",
+        data: "words: 7          (limit 12)\ncomplex keywords: none\ncontext: 1,840 tokens\n-> small model" },
+      { node: "answer", title: "Answer with citations",
+        text: "The model answers only from the context, and cites the page each fact came from so a clinician can check it.",
+        data: "\"The usual starting dose for adults is 5 mg once daily,\n increased to a maximum of 10 mg if needed.\n [guideline.pdf, page 2]\"" },
+      { node: "judge", title: "Score the answer",
+        text: "A separate judge model checks the answer against the context. Here every claim is supported, so the grade is high.",
+        data: "faithfulness       1.00\nanswer relevance   0.95\ncontext precision  0.90\n-> grade A" },
+      { node: "store", title: "Record and cache",
+        text: "Tokens and cost are logged. The grounded answer is cached, so the next identical question skips straight to it.",
+        data: "tokens: 2,310   cost: logged   cached: yes" }
+    ],
+    repeat: [
+      { node: "question", title: "The same question again",
+        text: "A different user asks exactly the question that was answered a minute ago.",
+        data: "Question: \"What is the usual dose of amlodipine?\"" },
+      { node: "rewrite", skipped: true, title: "No rewrite needed",
+        text: "There is no chat history, so the question is already standalone.",
+        data: "skipped" },
+      { node: "cache", title: "Cache hit",
+        text: "Same normalized question, same hash. The stored answer is found.",
+        data: "key = sha256(\"what is the usual dose of amlodipine?|all documents\")\nresult: HIT" },
+      { node: "hit", end: true, title: "Return the stored answer",
+        text: "The answer comes back in milliseconds: no search, no reranking, no model calls, no cost.",
+        data: "\"The usual starting dose for adults is 5 mg once daily,\n increased to a maximum of 10 mg if needed.\n [guideline.pdf, page 2]\"" }
+    ],
+    refuse: [
+      { node: "question", title: "An unrelated question",
+        text: "A user asks something the uploaded medical documents simply do not cover.",
+        data: "Question: \"Who won the 2022 football World Cup?\"" },
+      { node: "rewrite", skipped: true, title: "No rewrite needed",
+        text: "There is no chat history, so the question is already standalone.",
+        data: "skipped" },
+      { node: "cache", title: "Cache miss",
+        text: "This question has never been answered, so there is nothing stored for it.",
+        data: "result: MISS" },
+      { node: "search", title: "Vector search still returns 10 chunks",
+        text: "Vector search always returns its top 10, even when none of them is about the question. A naive pipeline would send these to the model anyway.",
+        data: "0.31  leaflet.pdf p.3     \"Do not drive if you feel dizzy...\"\n0.29  guideline.pdf p.9   \"Follow-up visits every 4 weeks...\"\n0.27  leaflet.pdf p.1     \"Keep out of the reach of children...\"\n... 7 more" },
+      { node: "rerank", title: "Every chunk fails the reranker",
+        text: "Read together with the question, none of the chunks is relevant. All of them fall below the minimum score.",
+        data: "0.002  drop\n0.001  drop\n0.001  drop\n... all 10 dropped (minimum score 0.05)" },
+      { node: "refuse", end: true, title: "Refuse instead of guessing",
+        text: "With no evidence left, the answering model is never called, so it cannot invent an answer. The user gets an honest reply instead.",
+        data: "\"I could not find this in the uploaded documents.\"" }
+    ]
+  };
+
+  var items = {};
+  root.querySelectorAll(".ragflow-steps li").forEach(function (li) { items[li.dataset.node] = li; });
+  var countEl = root.querySelector(".ragflow-count");
+  var titleEl = root.querySelector(".ragflow-title");
+  var textEl = root.querySelector(".ragflow-panel .ragflow-text");
+  var dataEl = root.querySelector(".ragflow-data code");
+  var backBtn = root.querySelector('[data-act="back"]');
+  var nextBtn = root.querySelector('[data-act="next"]');
+  var playBtn = root.querySelector('[data-act="play"]');
+
+  var scenario = "followup";
+  var step = 0;
+  var timer = null;
+
+  function render() {
+    var frames = SCENARIOS[scenario];
+    var frame = frames[step];
+    var last = step === frames.length - 1;
+    var seen = {};
+    var skipped = {};
+    for (var i = 0; i < step; i++) {
+      if (frames[i].skipped) { skipped[frames[i].node] = true; } else { seen[frames[i].node] = true; }
+    }
+    if (frame.skipped) { skipped[frame.node] = true; }
+    if (last && frame.end) {
+      MAIN.forEach(function (n) { if (!seen[n] && n !== frame.node) { skipped[n] = true; } });
+    }
+    Object.keys(items).forEach(function (n) {
+      var li = items[n];
+      li.classList.toggle("is-active", n === frame.node && !frame.skipped);
+      li.classList.toggle("is-done", !!seen[n]);
+      li.classList.toggle("is-skipped", !!skipped[n]);
+    });
+    countEl.textContent = "Step " + (step + 1) + " of " + frames.length;
+    titleEl.textContent = frame.title;
+    textEl.textContent = frame.text;
+    dataEl.textContent = frame.data;
+    backBtn.disabled = step === 0;
+    nextBtn.disabled = last;
+    if (last) { stop(); }
+  }
+
+  function stop() {
+    if (timer) { clearInterval(timer); timer = null; }
+    playBtn.innerHTML = "&#9654; Play";
+    playBtn.setAttribute("aria-label", "Play the steps automatically");
+  }
+
+  function play() {
+    if (step === SCENARIOS[scenario].length - 1) { step = 0; render(); }
+    playBtn.innerHTML = "&#10074;&#10074; Pause";
+    playBtn.setAttribute("aria-label", "Pause");
+    timer = setInterval(function () {
+      if (step < SCENARIOS[scenario].length - 1) { step++; render(); } else { stop(); }
+    }, 3200);
+  }
+
+  root.addEventListener("click", function (e) {
+    var btn = e.target.closest("button");
+    if (!btn) return;
+    if (btn.dataset.scn) {
+      stop();
+      scenario = btn.dataset.scn;
+      step = 0;
+      root.querySelectorAll(".ragflow-scn").forEach(function (b) { b.classList.toggle("is-on", b === btn); });
+      render();
+      return;
+    }
+    var act = btn.dataset.act;
+    if (act === "next" && step < SCENARIOS[scenario].length - 1) { stop(); step++; render(); }
+    else if (act === "back" && step > 0) { stop(); step--; render(); }
+    else if (act === "reset") { stop(); step = 0; render(); }
+    else if (act === "play") { if (timer) { stop(); } else { play(); } }
+  });
+
+  render();
+})();
+</script>

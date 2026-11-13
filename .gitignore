@@ -1,0 +1,10 @@
+# Hugo build output (the GitHub Pages workflow builds the site fresh on every push)
+public/
+resources/_gen/
+.hugo_build.lock
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

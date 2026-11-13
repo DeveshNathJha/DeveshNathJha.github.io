@@ -1,0 +1,171 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+
+/*
+ * Site colours. PaperMod reads these variables everywhere, so changing them here
+ * restyles the whole site without fighting the theme.
+ * All text colours meet WCAG AA contrast (4.5:1 or more) on their background.
+ * Body text sits around 13:1 in both modes: strong, but softer than pure white on black.
+ */
+
+/* Light mode: warm cream paper, near-black ink */
+:root,
+:root[data-theme="light"] {
+    --theme: #faf4e8;          /* page background */
+    --entry: #faf4e8;          /* cards and post entries */
+    --primary: #1c1917;        /* titles, headings, bold text (16:1) */
+    --secondary: #5c5550;      /* dates, meta, captions (6.7:1) */
+    --tertiary: #e3d9c6;       /* lines and dividers */
+    --content: #2a2522;        /* body text (13.8:1) */
+    --code-bg: #f0e8d8;        /* inline code */
+    --code-block-bg: #23211f;  /* code blocks */
+    --border: #e3d9c6;
+    --accent: #a8321f;         /* links (6.1:1) */
+    --accent-hover: #7f2416;
+    --callout-bg: #f3ead9;     /* TL;DR box, author card */
+}
+
+/* Dark mode: warm charcoal, soft off-white text (no pure white, no yellow) */
+:root[data-theme="dark"] {
+    --theme: #1b1a19;
+    --entry: #242220;
+    --primary: #f4f2ef;        /* headings (15.6:1) */
+    --secondary: #a39d97;      /* meta (6.5:1) */
+    --tertiary: #3a3633;
+    --content: #dedad5;        /* body text (12.5:1) */
+    --code-bg: #2a2826;
+    --code-block-bg: #242220;
+    --border: #3a3633;
+    --accent: #f0a58f;         /* links (8.7:1) */
+    --accent-hover: #f7c4b5;
+    --callout-bg: #242220;
+}
+
+/* ---------- Reading comfort ---------- */
+
+.post-content {
+    line-height: 1.75;         /* a little more air for long reads */
+}
+
+.post-content strong {
+    color: var(--primary);     /* bold stands out by weight, not by a loud colour */
+}
+
+/* Links: accent colour plus underline, so they never look like headings */
+.post-content a:not(.anchor),
+.entry-content a,
+.home-info a {
+    color: var(--accent);
+    text-decoration-thickness: 1px;
+    transition: color 0.15s ease;
+}
+
+.post-content a:not(.anchor):hover,
+.entry-content a:hover,
+.home-info a:hover {
+    color: var(--accent-hover);
+}
+
+/* Blockquotes (used for the TL;DR and the disclaimer) as a soft callout box */
+.post-content blockquote {
+    background: var(--callout-bg);
+    border-inline-start: 4px solid var(--accent);
+    border-radius: 6px;
+    padding: 0.8em 1em;
+}
+
+/* ---------- Code ---------- */
+
+/* Monospace font for code and diagrams, so ASCII diagrams line up */
+code,
+pre,
+.highlight,
+.chroma {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-variant-ligatures: none;
+    font-feature-settings: "calt" 0;
+}
+
+pre {
+    font-size: 0.88em;
+    line-height: 1.6;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    overflow-x: auto;
+    white-space: pre;          /* keep diagrams intact; scroll sideways on small screens */
+}
+
+pre code {
+    white-space: pre;
+    font-family: inherit;
+}
+
+:not(pre) > code {
+    padding: 0.15em 0.35em;
+    border-radius: 4px;
+    font-size: 0.88em;
+}
+
+/* Fix Hugo Chroma syntax-highlighter line overlap */
+.chroma .line {
+    display: block;
+}
+
+/* ---------- Author card at the end of posts ---------- */
+
+.author-card {
+    margin-top: 3em;
+    padding: 2em;
+    border-radius: 12px;
+    background-color: var(--callout-bg);
+    border: 1px solid var(--border);
+}
+
+.author-card h3 {
+    margin-top: 0;
+    margin-bottom: 0.5em;
+    font-size: 1.4em;
+}
+
+.author-card p {
+    font-size: 1em;
+    line-height: 1.6;
+    color: var(--secondary);
+    margin-bottom: 1.5em;
+}
+
+.author-links {
+    display: flex;
+    gap: 1em;
+    flex-wrap: wrap;
+}
+
+/* Buttons: white text on a solid colour; every pair is at least 4.5:1.
+   `a.author-link-btn` matches the specificity of the link rule above, and wins because it comes later. */
+.post-content a.author-link-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.6em 1.2em;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.9em;
+    color: #ffffff;
+    text-decoration: none;
+    box-shadow: none;
+    transition: filter 0.15s ease;
+}
+
+.post-content a.author-link-btn:hover {
+    color: #ffffff;
+    filter: brightness(0.9);
+}
+
+.reddit-btn { background-color: #d93a00; }   /* 4.6:1 */
+.linkedin-btn { background-color: #0a66c2; } /* 5.7:1 */
+.email-btn { background-color: #b4321f; }    /* 6.1:1 */
+
+.author-icon {
+    width: 18px;
+    height: 18px;
+    margin-right: 8px;
+    fill: currentColor;
+}
