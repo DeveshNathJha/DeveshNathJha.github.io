@@ -9,73 +9,75 @@
 
   <div class="rp-header">
     <span class="rp-heading">Which RAG architecture fits your problem?</span>
-    <span class="rp-sub">Answer 3 questions to get a recommendation.</span>
+    <span class="rp-sub">Answer up to 3 questions for a starting point to test. It is a suggestion, not a verdict.</span>
   </div>
 
   <div class="rp-body">
     <!-- Question screens -->
     <div class="rp-screen rp-active" data-screen="q1">
       <div class="rp-step-badge">Question 1 of 3</div>
-      <p class="rp-question">What best describes your data?</p>
+      <p class="rp-question">What do most of your users' questions need?</p>
       <div class="rp-options">
-        <button type="button" data-next="q2" class="rp-opt"><span class="rp-opt-label">Unstructured text</span><span class="rp-opt-hint">PDFs, articles, documentation, reports</span></button>
-        <button type="button" data-next="r-sql" class="rp-opt"><span class="rp-opt-label">Structured tables</span><span class="rp-opt-hint">SQL databases, spreadsheets, CSV files</span></button>
-        <button type="button" data-next="r-graph" class="rp-opt"><span class="rp-opt-label">Connected entities</span><span class="rp-opt-hint">People, drugs, legal cases, relationships between things</span></button>
-        <button type="button" data-next="r-agentic" class="rp-opt"><span class="rp-opt-label">Multiple different sources</span><span class="rp-opt-hint">Documents + databases + APIs + web, all at once</span></button>
+        <button type="button" data-next="q2" class="rp-opt"><span class="rp-opt-label">Facts from documents</span><span class="rp-opt-hint">Answers written in PDFs, reports, manuals or web pages</span></button>
+        <button type="button" data-next="r-sql" class="rp-opt"><span class="rp-opt-label">Numbers or lists from tables</span><span class="rp-opt-hint">Counts, totals, filters over records in a database or spreadsheet</span></button>
+        <button type="button" data-next="r-graph" class="rp-opt"><span class="rp-opt-label">Following relationships</span><span class="rp-opt-hint">Chains like drug interacts with drug, supplier supplies company</span></button>
+        <button type="button" data-next="r-agentic" class="rp-opt"><span class="rp-opt-label">Several sources or dependent steps</span><span class="rp-opt-hint">Documents plus databases plus APIs, where one step depends on another</span></button>
       </div>
     </div>
 
     <div class="rp-screen" data-screen="q2">
       <div class="rp-step-badge">Question 2 of 3</div>
-      <p class="rp-question">What matters more for your queries?</p>
+      <p class="rp-question">How are those questions usually phrased?</p>
       <div class="rp-options">
-        <button type="button" data-next="q3" data-tag="vector" class="rp-opt"><span class="rp-opt-label">Semantic meaning</span><span class="rp-opt-hint">"heart attack" should match "myocardial infarction"</span></button>
-        <button type="button" data-next="q3" data-tag="bm25" class="rp-opt"><span class="rp-opt-label">Exact terms</span><span class="rp-opt-hint">Drug names, ICD codes, section numbers, identifiers</span></button>
-        <button type="button" data-next="q3" data-tag="hybrid" class="rp-opt"><span class="rp-opt-label">Both</span><span class="rp-opt-hint">Mix of semantic questions and exact-term lookups</span></button>
+        <button type="button" data-next="q3" data-tag="vector" class="rp-opt"><span class="rp-opt-label">In varied, everyday words</span><span class="rp-opt-hint">"heart attack" should also find "myocardial infarction"</span></button>
+        <button type="button" data-next="q3" data-tag="bm25" class="rp-opt"><span class="rp-opt-label">Around exact terms</span><span class="rp-opt-hint">IDs, codes, product names, clause numbers</span></button>
+        <button type="button" data-next="q3" data-tag="hybrid" class="rp-opt"><span class="rp-opt-label">A mix of both</span><span class="rp-opt-hint">Some questions about meaning, some with exact terms</span></button>
       </div>
+      <div class="rp-nav"><button type="button" class="rp-back">&larr; Back</button></div>
     </div>
 
     <div class="rp-screen" data-screen="q3">
       <div class="rp-step-badge">Question 3 of 3</div>
       <p class="rp-question">What happens if the system gives a wrong answer?</p>
       <div class="rp-options">
-        <button type="button" data-next="result" data-stakes="high" class="rp-opt"><span class="rp-opt-label">It is dangerous</span><span class="rp-opt-hint">Healthcare, legal, finance — wrong answers cause real harm</span></button>
-        <button type="button" data-next="result" data-stakes="low" class="rp-opt"><span class="rp-opt-label">It is annoying but not harmful</span><span class="rp-opt-hint">Internal tools, chatbots, documentation assistants</span></button>
+        <button type="button" data-next="result" data-stakes="high" class="rp-opt"><span class="rp-opt-label">It could cause real harm</span><span class="rp-opt-hint">Healthcare, legal, finance and similar decisions</span></button>
+        <button type="button" data-next="result" data-stakes="low" class="rp-opt"><span class="rp-opt-label">It is inconvenient, not harmful</span><span class="rp-opt-hint">Internal tools, documentation assistants, general Q&amp;A</span></button>
       </div>
+      <div class="rp-nav"><button type="button" class="rp-back">&larr; Back</button></div>
     </div>
 
-    <!-- Static result screens (for Q1 direct answers) -->
+    <!-- Static result screens (answers to question 1) -->
     <div class="rp-screen" data-screen="r-sql">
-      <div class="rp-result-badge">Recommendation</div>
-      <h4 class="rp-result-title">Text-to-SQL RAG</h4>
-      <p class="rp-result-text">Your data is already structured. Instead of embedding rows into vectors, convert the user's question into a SQL query and run it directly against your database. Libraries like LangChain's <code>SQLDatabaseChain</code> or <code>vanna.ai</code> can help. No embedding model or vector database needed.</p>
-      <p class="rp-result-note">This is not RAG in the traditional sense, but it solves the same problem: answering natural-language questions over your own data.</p>
-      <button type="button" class="rp-restart">Start over</button>
+      <div class="rp-result-badge">A reasonable starting point</div>
+      <div class="rp-result-title">SQL over your tables (Text-to-SQL)</div>
+      <p class="rp-result-text">When answers live in tables, an LLM can translate the question into a SQL query and the system runs it, instead of embedding rows into vectors. Use a read-only database user, validate the generated query, and expose only the tables the user may see.</p>
+      <p class="rp-result-note">Then measure: how often the generated query is correct, on a set of real questions with known answers.</p>
+      <div class="rp-nav"><button type="button" class="rp-back">&larr; Back</button><button type="button" class="rp-restart">Start over</button></div>
     </div>
 
     <div class="rp-screen" data-screen="r-graph">
-      <div class="rp-result-badge">Recommendation</div>
-      <h4 class="rp-result-title">Graph RAG</h4>
-      <p class="rp-result-text">Your questions need to follow relationships between entities — drug interactions, case precedents, supply chains. Build a knowledge graph (e.g. Neo4j) and retrieve by graph traversal instead of, or alongside, vector similarity.</p>
-      <p class="rp-result-note">Graph construction from unstructured text is expensive and error-prone. Start with a small, well-defined entity set and expand gradually. Consider adding a self-correction layer if the domain is high-stakes.</p>
-      <button type="button" class="rp-restart">Start over</button>
+      <div class="rp-result-badge">A reasonable starting point</div>
+      <div class="rp-result-title">Graph retrieval</div>
+      <p class="rp-result-text">If a curated source of the relationships already exists (for example, a drug-interaction database), query it directly first. Building a knowledge graph from documents with an LLM can work too, but extraction errors become retrieval errors.</p>
+      <p class="rp-result-note">Then measure: entity resolution (are "metformin" and "Glucophage" the same node?) and extraction accuracy on a sample of documents.</p>
+      <div class="rp-nav"><button type="button" class="rp-back">&larr; Back</button><button type="button" class="rp-restart">Start over</button></div>
     </div>
 
     <div class="rp-screen" data-screen="r-agentic">
-      <div class="rp-result-badge">Recommendation</div>
-      <h4 class="rp-result-title">Agentic RAG</h4>
-      <p class="rp-result-text">Your questions span multiple data sources, so no single retrieval method covers everything. Use an LLM agent that can choose which tool to call — vector search for documents, SQL for tables, graph traversal for relationships, web search for recent information.</p>
-      <p class="rp-result-note">Add guardrails: maximum iterations, timeouts, and a fallback to simpler retrieval. Agents can loop or pick the wrong tool, so test thoroughly with real queries.</p>
-      <button type="button" class="rp-restart">Start over</button>
+      <div class="rp-result-badge">A reasonable starting point</div>
+      <div class="rp-result-title">A router first, an agent if needed</div>
+      <p class="rp-result-text">Try a fixed workflow with a few predefined paths (for example: documents, SQL, or both) and a router that picks one. Move to a free-form agent only if the questions really need open-ended, multi-step tool use.</p>
+      <p class="rp-result-note">Then measure: tool-choice accuracy, latency and cost per question. Give any agent step and time budgets, and treat retrieved text as data, not instructions.</p>
+      <div class="rp-nav"><button type="button" class="rp-back">&larr; Back</button><button type="button" class="rp-restart">Start over</button></div>
     </div>
 
-    <!-- Dynamic result screen (filled by JS based on Q2 + Q3 answers) -->
+    <!-- Dynamic result screen (filled by JS from the answers to questions 2 and 3) -->
     <div class="rp-screen" data-screen="result">
-      <div class="rp-result-badge">Recommendation</div>
-      <h4 class="rp-result-title" id="{{ $id }}-rtitle"></h4>
+      <div class="rp-result-badge">A reasonable starting point</div>
+      <div class="rp-result-title" id="{{ $id }}-rtitle"></div>
       <p class="rp-result-text" id="{{ $id }}-rtext"></p>
       <p class="rp-result-note" id="{{ $id }}-rnote"></p>
-      <button type="button" class="rp-restart">Start over</button>
+      <div class="rp-nav"><button type="button" class="rp-back">&larr; Back</button><button type="button" class="rp-restart">Start over</button></div>
     </div>
   </div>
 
@@ -210,6 +212,25 @@
   color: var(--primary);
   border-color: var(--primary);
 }
+.rp-nav {
+  display: flex;
+  gap: 0.6em;
+  margin-top: 1em;
+}
+.rp-back {
+  padding: 0.5em 1.2em;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--theme);
+  color: var(--secondary);
+  font-size: 0.88em;
+  cursor: pointer;
+  font-family: inherit;
+}
+.rp-back:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+}
 .rp-noscript {
   padding: 1em;
   color: var(--secondary);
@@ -226,37 +247,49 @@
   var root = document.getElementById("{{ $id }}");
   if (!root) return;
 
-  var tag = "";   // vector | bm25 | hybrid
-  var stakes = "";  // high | low
+  var tag = "";      // vector | bm25 | hybrid
+  var stakes = "";   // high | low
+  var history = [];  // screens visited, for the Back button
+  var current = "q1";
+
+  var CHECKS = " Add reranking with a calibrated threshold, a refusal path when nothing relevant is found, answer verification, and human review for decisions that matter.";
 
   var results = {
-    "vector-low":  { title: "Vector RAG",                            text: "Semantic vector search will handle your paraphrase-heavy queries well. Use a model like <code>all-MiniLM-L6-v2</code> with FAISS or Chroma. Add parent-child chunking if your documents are long.", note: "Consider adding BM25 later if you notice missed exact terms. Monitor retrieval quality with a small test set of real queries." },
-    "vector-high": { title: "Vector RAG + Self-Correcting (CRAG)",   text: "Start with vector search, then wrap it in a self-correction layer: a cross-encoder reranker to filter weak matches, an LLM judge to score faithfulness, and a refusal path when nothing is relevant enough.", note: "In high-stakes domains, a wrong answer is worse than no answer. The self-correction layer catches retrieval failures before they reach the user. Threshold tuning on real queries is essential." },
-    "bm25-low":    { title: "Keyword RAG (BM25)",                    text: "BM25 keyword search (Elasticsearch, OpenSearch) will reliably find the exact terms your users are looking for — drug names, codes, legal references. It is fast, well-understood, and does not require an embedding model or GPU.", note: "If users start asking semantic questions where wording varies, consider adding vector search for a hybrid approach." },
-    "bm25-high":   { title: "Keyword RAG (BM25) + Self-Correcting",  text: "BM25 will handle the exact-term lookups reliably. Add a self-correction layer: verify that retrieved passages actually answer the question before generating, and refuse when they do not.", note: "Exact-match retrieval is already precise, but self-correction catches cases where the right terms appear in an irrelevant context." },
-    "hybrid-low":  { title: "Hybrid RAG (Vector + BM25)",            text: "Run vector search and BM25 in parallel, then merge with Reciprocal Rank Fusion. This covers both semantic similarity and exact-term matching — a common default for production systems.", note: "This is the architecture many production RAG systems converge on. It handles both 'what does this mean?' and 'find this exact code' queries." },
-    "hybrid-high": { title: "Hybrid RAG + Self-Correcting (CRAG)",   text: "Hybrid retrieval (vector + BM25) for broad coverage, plus a self-correction layer (reranker + LLM judge + refusal) for safety. This combination addresses both retrieval coverage and answer reliability.", note: "My Healthcare RAG system uses a version of this: vector search + reranker + LLM judge. Adding BM25 for hybrid retrieval is the next improvement I would make." }
+    "vector-low":  { title: "Vector retrieval",
+      text: "Embedding search handles varied wording well. A small embedding model with FAISS, Chroma or pgvector is enough to start. Add parent-child chunking if documents are long.",
+      note: "Then measure: recall on paraphrased questions. If exact terms get missed, try adding BM25." },
+    "vector-high": { title: "Vector retrieval, plus quality checks",
+      text: "Embedding search handles varied wording well." + CHECKS,
+      note: "Then measure: the wrong-answer rate and the refusal rate together, on real questions including off-topic ones." },
+    "bm25-low":    { title: "Keyword retrieval (BM25)",
+      text: "BM25 ranks documents by rare, exact terms, with no embedding model needed. Normalize identifiers (one standard form per code) and check how your tokenizer splits them.",
+      note: "Then measure: recall on questions with exact IDs, written the way users type them. Add vector search if paraphrased questions start failing." },
+    "bm25-high":   { title: "Keyword retrieval (BM25), plus quality checks",
+      text: "BM25 with normalized identifiers finds exact terms, but the right term can appear in the wrong context." + CHECKS,
+      note: "Then measure: recall on exact-ID questions, plus the wrong-answer and refusal rates." },
+    "hybrid-low":  { title: "Hybrid retrieval (vector + BM25, merged with RRF)",
+      text: "Running both searches and merging with Reciprocal Rank Fusion covers questions about meaning and questions with exact terms.",
+      note: "Then measure: whether hybrid actually beats each method alone on your questions. It adds a second index to maintain." },
+    "hybrid-high": { title: "Hybrid retrieval, plus quality checks",
+      text: "Vector search and BM25 merged with Reciprocal Rank Fusion, for coverage of both meaning and exact terms." + CHECKS,
+      note: "Then measure: retrieval recall for each method and for hybrid, plus the wrong-answer and refusal rates." }
   };
 
-  function show(screenName) {
+  function show(screenName, remember) {
+    if (remember && current !== screenName) history.push(current);
     var screens = root.querySelectorAll(".rp-screen");
-    for (var i = 0; i < screens.length; i++) {
-      screens[i].classList.remove("rp-active");
-    }
+    for (var i = 0; i < screens.length; i++) screens[i].classList.remove("rp-active");
     var target = root.querySelector('[data-screen="' + screenName + '"]');
     if (target) target.classList.add("rp-active");
+    current = screenName;
   }
 
   function fillResult() {
-    var key = tag + "-" + stakes;
-    var r = results[key];
+    var r = results[tag + "-" + stakes];
     if (!r) return;
-    var titleEl = document.getElementById("{{ $id }}-rtitle");
-    var textEl  = document.getElementById("{{ $id }}-rtext");
-    var noteEl  = document.getElementById("{{ $id }}-rnote");
-    if (titleEl) titleEl.innerHTML = r.title;
-    if (textEl)  textEl.innerHTML  = r.text;
-    if (noteEl)  noteEl.innerHTML  = r.note;
+    document.getElementById("{{ $id }}-rtitle").textContent = r.title;
+    document.getElementById("{{ $id }}-rtext").textContent = r.text;
+    document.getElementById("{{ $id }}-rnote").textContent = r.note;
   }
 
   root.addEventListener("click", function(e) {
@@ -264,18 +297,17 @@
     if (btn) {
       if (btn.dataset.tag) tag = btn.dataset.tag;
       if (btn.dataset.stakes) stakes = btn.dataset.stakes;
-      var next = btn.dataset.next;
-      if (next === "result") {
-        fillResult();
-      }
-      if (next) show(next);
+      if (btn.dataset.next === "result") fillResult();
+      if (btn.dataset.next) show(btn.dataset.next, true);
       return;
     }
-    var restart = e.target.closest(".rp-restart");
-    if (restart) {
-      tag = "";
-      stakes = "";
-      show("q1");
+    if (e.target.closest(".rp-back")) {
+      if (history.length) show(history.pop(), false);
+      return;
+    }
+    if (e.target.closest(".rp-restart")) {
+      tag = ""; stakes = ""; history = [];
+      show("q1", false);
     }
   });
 })();

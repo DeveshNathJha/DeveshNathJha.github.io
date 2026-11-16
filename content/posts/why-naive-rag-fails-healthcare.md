@@ -273,7 +273,7 @@ Join the ongoing discussion and share your thoughts on this architecture on Redd
 ---
 
 <div class="author-card">
-  <h3>Connect & Collaborate</h3>
+  <div class="author-card-title">Connect & Collaborate</div>
   <p>Always open to discussing RAG architectures, edge cases in clinical NLP, or exchanging notes on production AI systems. Interested in collaborating or chatting about engineering challenges? Let's connect!</p>
   <div class="author-links">
     <a href="https://www.reddit.com/user/JhaDevesh/" target="_blank" class="author-link-btn reddit-btn">

@@ -1,0 +1,136 @@
+{{- /*
+  BM25 tokenization playground: type a query and see whether each tokenizer can match the document.
+  Usage: {{< token-playground >}}
+  This only demonstrates tokenization and matching, not the full BM25 score.
+*/ -}}
+{{- $id := printf "tokplay-%d" .Ordinal -}}
+<div class="tokplay" id="{{ $id }}">
+  <div class="tp-title">Try it: does the query match the document?</div>
+  <div class="tp-doc"><span class="tp-label">Document</span> <span class="tp-doctext">Patient diagnosed with E11.9, started on metformin 500 mg.</span></div>
+
+  <label class="tp-label" for="{{ $id }}-q">Query</label>
+  <div class="tp-inputrow">
+    <input id="{{ $id }}-q" class="tp-input" type="text" value="E11.9" autocomplete="off" spellcheck="false">
+  </div>
+  <div class="tp-chips" role="group" aria-label="Example queries">
+    <span class="tp-label">Try:</span>
+    <button type="button" data-q="E11.9">E11.9</button>
+    <button type="button" data-q="E119">E119</button>
+    <button type="button" data-q="E11-9">E11-9</button>
+    <button type="button" data-q="e11.9">e11.9</button>
+    <button type="button" data-q="Metformin">Metformin</button>
+  </div>
+  <label class="tp-toggle"><input type="checkbox" class="tp-norm"> Normalize codes first (E11.9 and E11-9 both become E119, in the document and the query)</label>
+
+  <div class="tp-rows" aria-live="polite"></div>
+  <noscript><p class="tp-note">Turn on JavaScript to try this. The table above shows the same results.</p></noscript>
+</div>
+
+<style>
+.tokplay { border: 1px solid var(--border); border-radius: 12px; background: var(--callout-bg, var(--code-bg)); padding: 1rem 1.1rem; margin: 1.5rem 0; font-size: 0.95rem; }
+.tp-title { font-weight: 700; color: var(--primary); margin-bottom: 0.6rem; }
+.tp-label { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--secondary); }
+.tp-doc { margin-bottom: 0.8rem; }
+.tp-doctext { color: var(--content); }
+.tp-inputrow { margin: 0.25rem 0 0.5rem; }
+.tp-input { width: 100%; max-width: 22rem; font: inherit; font-family: ui-monospace, Consolas, monospace; padding: 0.45em 0.7em; border: 1px solid var(--border); border-radius: 6px; background: var(--theme); color: var(--primary); }
+.tp-input:focus { outline: 2px solid var(--accent, #a8321f); outline-offset: 1px; }
+.tp-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-bottom: 0.5rem; }
+.tp-chips button { font: inherit; font-size: 0.82em; font-family: ui-monospace, Consolas, monospace; cursor: pointer; padding: 0.2em 0.6em; border: 1px solid var(--border); border-radius: 999px; background: var(--theme); color: var(--primary); }
+.tp-chips button:hover { border-color: var(--accent, #a8321f); }
+.tp-toggle { display: block; font-size: 0.85em; color: var(--content); margin-bottom: 0.8rem; cursor: pointer; }
+.tp-row { border-top: 1px solid var(--border); padding: 0.6rem 0; }
+.tp-rowhead { display: flex; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; font-weight: 600; color: var(--primary); font-size: 0.92em; }
+.tp-badge { font-size: 0.8em; padding: 0.1em 0.6em; border-radius: 999px; color: #fff; }
+.tp-yes { background: #16803c; }
+.tp-no { background: #b4321f; }
+.tp-tokens { margin-top: 0.35rem; display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.tp-tok { font-family: ui-monospace, Consolas, monospace; font-size: 0.8em; padding: 0.1em 0.45em; border-radius: 4px; border: 1px solid var(--border); background: var(--theme); color: var(--content); }
+.tp-tok.tp-hit { border-color: #16803c; box-shadow: 0 0 0 1px #16803c inset; font-weight: 700; }
+.tp-why { font-size: 0.82em; color: var(--secondary); margin-top: 0.3rem; }
+</style>
+
+<script>
+(function () {
+  var root = document.getElementById("{{ $id }}");
+  if (!root) return;
+  var DOC = "Patient diagnosed with E11.9, started on metformin 500 mg.";
+  var input = root.querySelector(".tp-input");
+  var norm = root.querySelector(".tp-norm");
+  var rows = root.querySelector(".tp-rows");
+
+  var TOKENIZERS = [
+    { name: "Whitespace tokenizer", why: "Splits on spaces only, so punctuation stays attached (\"e11.9,\").",
+      fn: function (s) { return s.toLowerCase().split(/\s+/).filter(Boolean); } },
+    { name: "Code-aware tokenizer", why: "Keeps codes like e11.9 together and drops surrounding punctuation.",
+      fn: function (s) { return s.toLowerCase().match(/[a-z0-9]+(?:\.[a-z0-9]+)*/g) || []; } }
+  ];
+
+  // Normalization runs on the raw text, before tokenizing: "E11.9" and "E11-9" both become "E119".
+  function normalizeText(s) {
+    return s.replace(/\b([A-Za-z]\d+)[.\-](\d+)\b/g, "$1$2");
+  }
+
+  function chip(tok, hit) {
+    var span = document.createElement("span");
+    span.className = "tp-tok" + (hit ? " tp-hit" : "");
+    span.textContent = tok;
+    return span;
+  }
+
+  function render() {
+    rows.innerHTML = "";
+    var q = input.value;
+    var docText = norm.checked ? normalizeText(DOC) : DOC;
+    var queryText = norm.checked ? normalizeText(q) : q;
+    TOKENIZERS.forEach(function (tk) {
+      var docTokens = tk.fn(docText);
+      var qTokens = tk.fn(queryText);
+      var docSet = {};
+      docTokens.forEach(function (t) { docSet[t] = true; });
+      var hits = qTokens.filter(function (t) { return docSet[t]; });
+      var hitSet = {};
+      hits.forEach(function (t) { hitSet[t] = true; });
+
+      var row = document.createElement("div");
+      row.className = "tp-row";
+      var head = document.createElement("div");
+      head.className = "tp-rowhead";
+      var name = document.createElement("span");
+      name.textContent = tk.name;
+      var badge = document.createElement("span");
+      badge.className = "tp-badge " + (hits.length ? "tp-yes" : "tp-no");
+      badge.textContent = hits.length ? "match: " + hits.join(", ") : "no match";
+      head.appendChild(name);
+      head.appendChild(badge);
+      row.appendChild(head);
+
+      [["Document tokens", docTokens], ["Query tokens", qTokens]].forEach(function (pair) {
+        var line = document.createElement("div");
+        line.className = "tp-tokens";
+        var lab = document.createElement("span");
+        lab.className = "tp-label";
+        lab.textContent = pair[0];
+        line.appendChild(lab);
+        pair[1].forEach(function (t) { line.appendChild(chip(t, !!hitSet[t])); });
+        row.appendChild(line);
+      });
+      var why = document.createElement("div");
+      why.className = "tp-why";
+      why.textContent = tk.why;
+      row.appendChild(why);
+      rows.appendChild(row);
+    });
+  }
+
+  input.addEventListener("input", render);
+  norm.addEventListener("change", render);
+  root.querySelector(".tp-chips").addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (!b) return;
+    input.value = b.dataset.q;
+    render();
+  });
+  render();
+})();
+</script>

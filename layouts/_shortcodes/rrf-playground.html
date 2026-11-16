@@ -1,0 +1,117 @@
+{{- /*
+  Reciprocal Rank Fusion playground: reorder two ranked lists and change k; the fused ranking updates live.
+  Usage: {{< rrf-playground >}}
+*/ -}}
+{{- $id := printf "rrfplay-%d" .Ordinal -}}
+<div class="rrfplay" id="{{ $id }}">
+  <div class="rr-title">Try it: move documents up and down, and watch the merged ranking change</div>
+  <div class="rr-hint">It starts with the example above: Doc A is 1st and 5th, Doc B is 3rd in both. Try moving Doc B up one place in either list.</div>
+  <div class="rr-lists">
+    <div class="rr-list" data-list="0"><div class="rr-label">Vector search ranking</div><ol></ol></div>
+    <div class="rr-list" data-list="1"><div class="rr-label">BM25 ranking</div><ol></ol></div>
+  </div>
+  <label class="rr-k">k = <strong class="rr-kval">60</strong>
+    <input type="range" min="1" max="100" value="60" class="rr-slider" aria-label="RRF constant k">
+  </label>
+  <div class="rr-hint">Small k gives more weight to the very top ranks; large k makes the merge more even.</div>
+  <div class="rr-label">Merged with RRF</div>
+  <ol class="rr-out" aria-live="polite"></ol>
+  <button type="button" class="rr-reset">Reset</button>
+  <noscript><p class="rr-hint">Turn on JavaScript to try this.</p></noscript>
+</div>
+
+<style>
+.rrfplay { border: 1px solid var(--border); border-radius: 12px; background: var(--callout-bg, var(--code-bg)); padding: 1rem 1.1rem; margin: 1.5rem 0; font-size: 0.93rem; }
+.rr-title { font-weight: 700; color: var(--primary); margin-bottom: 0.7rem; }
+.rr-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.8rem; margin-bottom: 0.8rem; }
+.rr-label { font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--secondary); margin-bottom: 0.3rem; }
+.rrfplay ol { margin: 0; padding-left: 1.6em; }
+.md-content .rrfplay li { margin: 0.2rem 0; color: var(--content); }
+.rr-item { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; }
+.rr-btns button { font: inherit; font-size: 0.75em; cursor: pointer; padding: 0.05em 0.45em; border: 1px solid var(--border); border-radius: 4px; background: var(--theme); color: var(--primary); }
+.rr-btns button:disabled { opacity: 0.35; cursor: default; }
+.rr-btns button:hover:not(:disabled) { border-color: var(--accent, #a8321f); }
+.rr-k { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; color: var(--content); }
+.rr-slider { flex: 1; min-width: 150px; accent-color: var(--accent, #a8321f); }
+.rr-hint { font-size: 0.82em; color: var(--secondary); margin: 0.2rem 0 0.8rem; }
+.rr-score { font-family: ui-monospace, Consolas, monospace; font-size: 0.85em; color: var(--secondary); }
+.rr-parts { font-size: 0.8em; color: var(--secondary); }
+.rr-reset { margin-top: 0.7rem; font: inherit; font-size: 0.85em; cursor: pointer; padding: 0.4em 1em; border: 1px solid var(--border); border-radius: 6px; background: var(--theme); color: var(--secondary); }
+.rr-reset:hover { color: var(--primary); border-color: var(--primary); }
+</style>
+
+<script>
+(function () {
+  var root = document.getElementById("{{ $id }}");
+  if (!root) return;
+  // Starts with the example from the text: Doc A is 1st and 5th, Doc B is 3rd in both.
+  var START = [
+    ["Doc A", "Doc C", "Doc B", "Doc D", "Doc E"],
+    ["Doc F", "Doc G", "Doc B", "Doc H", "Doc A"]
+  ];
+  var lists = START.map(function (l) { return l.slice(); });
+  var slider = root.querySelector(".rr-slider");
+  var kval = root.querySelector(".rr-kval");
+  var out = root.querySelector(".rr-out");
+
+  function renderLists() {
+    root.querySelectorAll(".rr-list").forEach(function (box) {
+      var li = Number(box.dataset.list);
+      var ol = box.querySelector("ol");
+      ol.innerHTML = "";
+      lists[li].forEach(function (doc, i) {
+        var item = document.createElement("li");
+        item.innerHTML = '<span class="rr-item"><span></span><span class="rr-btns">' +
+          '<button type="button" data-l="' + li + '" data-i="' + i + '" data-d="-1" aria-label="Move up">&#9650;</button> ' +
+          '<button type="button" data-l="' + li + '" data-i="' + i + '" data-d="1" aria-label="Move down">&#9660;</button></span></span>';
+        item.querySelector(".rr-item > span").textContent = doc;
+        var btns = item.querySelectorAll("button");
+        btns[0].disabled = i === 0;
+        btns[1].disabled = i === lists[li].length - 1;
+        ol.appendChild(item);
+      });
+    });
+  }
+
+  function renderFused() {
+    var k = Number(slider.value);
+    kval.textContent = k;
+    var scores = {}, parts = {};
+    lists.forEach(function (list) {
+      list.forEach(function (doc, i) {
+        var s = 1 / (k + i + 1);
+        scores[doc] = (scores[doc] || 0) + s;
+        (parts[doc] = parts[doc] || []).push("1/" + (k + i + 1));
+      });
+    });
+    var docs = Object.keys(scores).sort(function (a, b) { return scores[b] - scores[a]; });
+    out.innerHTML = "";
+    docs.forEach(function (doc) {
+      var li = document.createElement("li");
+      li.innerHTML = '<span class="rr-item"><span><strong></strong> <span class="rr-parts"></span></span><span class="rr-score"></span></span>';
+      li.querySelector("strong").textContent = doc;
+      li.querySelector(".rr-parts").textContent = "(" + parts[doc].join(" + ") + ")";
+      li.querySelector(".rr-score").textContent = scores[doc].toFixed(5);
+      out.appendChild(li);
+    });
+  }
+
+  root.addEventListener("click", function (e) {
+    var b = e.target.closest(".rr-btns button");
+    if (b) {
+      var l = Number(b.dataset.l), i = Number(b.dataset.i), j = i + Number(b.dataset.d);
+      var t = lists[l][i]; lists[l][i] = lists[l][j]; lists[l][j] = t;
+      renderLists(); renderFused();
+      return;
+    }
+    if (e.target.closest(".rr-reset")) {
+      lists = START.map(function (x) { return x.slice(); });
+      slider.value = 60;
+      renderLists(); renderFused();
+    }
+  });
+  slider.addEventListener("input", renderFused);
+  renderLists();
+  renderFused();
+})();
+</script>

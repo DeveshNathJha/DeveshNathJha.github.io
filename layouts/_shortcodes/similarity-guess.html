@@ -1,0 +1,115 @@
+{{- /*
+  "Guess first, then reveal" for the embedding-similarity experiment.
+  Usage: {{< similarity-guess >}}
+  The numbers are the measured results quoted in the post. Without JavaScript, the noscript table shows them.
+*/ -}}
+{{- $id := printf "simguess-%d" .Ordinal -}}
+<div class="simguess" id="{{ $id }}">
+  <div class="sg-head">
+    <span class="sg-title">Before you look: which pair do you think an embedding model finds <em>most similar</em>?</span>
+    <span class="sg-sub">Pick one. Higher cosine similarity means the model treats the two texts as closer in meaning.</span>
+  </div>
+
+  <div class="sg-options" role="group" aria-label="Pick the pair you expect to be most similar">
+    <button type="button" class="sg-opt" data-row="0"><code>E11.9</code> vs <code>E10.9</code><span>type 2 vs type 1 diabetes codes</span></button>
+    <button type="button" class="sg-opt" data-row="2">"heart attack" vs "myocardial infarction"<span>two names for the same thing</span></button>
+    <button type="button" class="sg-opt" data-row="3">"metformin" vs "metoprolol"<span>two different drugs</span></button>
+    <button type="button" class="sg-opt" data-row="4">"heart attack" vs "football match"<span>unrelated</span></button>
+  </div>
+
+  <div class="sg-result" hidden>
+    <p class="sg-verdict" aria-live="polite"></p>
+    <div class="sg-legend"><span class="sg-key sg-k1"></span>all-MiniLM-L6-v2 <span class="sg-key sg-k2"></span>bge-small-en-v1.5</div>
+    <div class="sg-chart"></div>
+    <button type="button" class="sg-again">Try again</button>
+  </div>
+
+  <noscript>
+    <table>
+      <tr><th>Text pair</th><th>all-MiniLM-L6-v2</th><th>bge-small-en-v1.5</th></tr>
+      <tr><td>E11.9 vs E10.9</td><td>0.845</td><td>0.875</td></tr>
+      <tr><td>diabetes text with E11.9 vs type 1 / E10.9</td><td>0.807</td><td>0.902</td></tr>
+      <tr><td>heart attack vs myocardial infarction</td><td>0.594</td><td>0.770</td></tr>
+      <tr><td>metformin vs metoprolol</td><td>0.681</td><td>0.768</td></tr>
+      <tr><td>heart attack vs football match</td><td>0.200</td><td>0.509</td></tr>
+    </table>
+  </noscript>
+</div>
+
+<style>
+.simguess { border: 1px solid var(--border); border-radius: 12px; background: var(--callout-bg, var(--code-bg)); padding: 1rem 1.1rem; margin: 1.5rem 0; }
+.sg-head { display: flex; flex-direction: column; gap: 0.2rem; margin-bottom: 0.8rem; }
+.sg-title { font-weight: 700; color: var(--primary); }
+.sg-sub { font-size: 0.85em; color: var(--secondary); }
+.sg-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.5rem; }
+.simguess button { font: inherit; cursor: pointer; }
+.sg-opt { text-align: left; padding: 0.7em 0.9em; border: 1px solid var(--border); border-radius: 8px; background: var(--theme); color: var(--primary); font-size: 0.92em; line-height: 1.4; }
+.sg-opt span { display: block; font-size: 0.82em; color: var(--secondary); margin-top: 0.15em; }
+.sg-opt:hover, .sg-opt:focus-visible { border-color: var(--accent, #a8321f); outline: none; }
+.sg-opt.sg-picked { border-color: var(--accent, #a8321f); box-shadow: 0 0 0 2px var(--accent, #a8321f) inset; }
+.sg-result { margin-top: 1rem; }
+.md-content .sg-verdict { margin: 0 0 0.8rem; color: var(--content); }
+.sg-legend { font-size: 0.82em; color: var(--secondary); display: flex; align-items: center; gap: 0.4em; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.sg-key { display: inline-block; width: 0.9em; height: 0.9em; border-radius: 2px; margin-left: 0.6em; }
+.sg-key:first-child { margin-left: 0; }
+.sg-k1, .sg-b1 { background: var(--accent, #a8321f); }
+.sg-k2, .sg-b2 { background: var(--secondary); }
+.sg-row { margin-bottom: 0.7rem; }
+.sg-row-label { font-size: 0.88em; color: var(--content); margin-bottom: 0.2rem; }
+.sg-row.sg-mine .sg-row-label { font-weight: 700; color: var(--primary); }
+.sg-bar-line { display: flex; align-items: center; gap: 0.5em; margin: 0.15rem 0; }
+.sg-track { flex: 1; height: 0.75rem; background: var(--theme); border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
+.sg-fill { height: 100%; width: 0; border-radius: 3px; transition: width 0.6s ease; }
+.sg-val { font-family: ui-monospace, Consolas, monospace; font-size: 0.82em; color: var(--secondary); width: 3.2em; text-align: right; }
+.sg-again { margin-top: 0.4rem; padding: 0.45em 1em; border: 1px solid var(--border); border-radius: 6px; background: var(--theme); color: var(--secondary); font-size: 0.85em; }
+.sg-again:hover { color: var(--primary); border-color: var(--primary); }
+@media (prefers-reduced-motion: reduce) { .sg-fill { transition: none; } }
+</style>
+
+<script>
+(function () {
+  var root = document.getElementById("{{ $id }}");
+  if (!root) return;
+  var ROWS = [
+    { label: "E11.9 vs E10.9 (different diabetes codes)", a: 0.845, b: 0.875 },
+    { label: "diabetes sentence with E11.9 vs the type 1 / E10.9 version", a: 0.807, b: 0.902 },
+    { label: "heart attack vs myocardial infarction (same meaning)", a: 0.594, b: 0.770 },
+    { label: "metformin vs metoprolol (different drugs)", a: 0.681, b: 0.768 },
+    { label: "heart attack vs football match (unrelated)", a: 0.200, b: 0.509 }
+  ];
+  var VERDICT = {
+    "0": "Good instinct. The two diabetes codes scored highest in this check, higher even than the true synonyms. That is the surprise worth remembering.",
+    "2": "Many people expect that, because the two phrases mean the same thing. But in this check the two different diabetes codes scored higher than the true synonyms, in both models.",
+    "3": "Close: the two drugs did score higher than the true synonyms in the smaller model. But the two diabetes codes scored highest of all.",
+    "4": "Not this one: the unrelated pair is the lowest in both models. The highest was the two different diabetes codes, above even the true synonyms."
+  };
+  var chart = root.querySelector(".sg-chart");
+  var result = root.querySelector(".sg-result");
+  var verdict = root.querySelector(".sg-verdict");
+
+  function bar(cls, v) {
+    return '<div class="sg-bar-line"><div class="sg-track"><div class="sg-fill ' + cls + '" data-w="' + (v * 100) + '"></div></div><span class="sg-val">' + v.toFixed(3) + "</span></div>";
+  }
+
+  function reveal(picked) {
+    root.querySelectorAll(".sg-opt").forEach(function (b) { b.classList.toggle("sg-picked", b.dataset.row === picked); });
+    chart.innerHTML = ROWS.map(function (r, i) {
+      return '<div class="sg-row' + (String(i) === picked ? " sg-mine" : "") + '"><div class="sg-row-label">' + r.label + "</div>" + bar("sg-b1", r.a) + bar("sg-b2", r.b) + "</div>";
+    }).join("");
+    verdict.textContent = VERDICT[picked];
+    result.hidden = false;
+    requestAnimationFrame(function () {
+      chart.querySelectorAll(".sg-fill").forEach(function (f) { f.style.width = f.dataset.w + "%"; });
+    });
+  }
+
+  root.addEventListener("click", function (e) {
+    var opt = e.target.closest(".sg-opt");
+    if (opt) { reveal(opt.dataset.row); return; }
+    if (e.target.closest(".sg-again")) {
+      result.hidden = true;
+      root.querySelectorAll(".sg-opt").forEach(function (b) { b.classList.remove("sg-picked"); });
+    }
+  });
+})();
+</script>

@@ -1,502 +1,457 @@
 ---
 title: "Beyond Vector Databases: Exploring Different Types of RAG Architectures"
 date: 2026-11-13T12:00:00+05:30
-description: "RAG is not just vector search. Six retrieval architectures — vector, keyword, hybrid, graph, agentic, and self-correcting — explained with analogies, diagrams, code, and a decision framework."
-summary: "A practical guide to six RAG architectures beyond the standard vector-search pipeline: when each works, when it fails, and how to choose the right one for your problem."
-keywords: ["RAG Architectures", "Vector Database", "BM25", "Hybrid RAG", "Graph RAG", "Agentic RAG", "CRAG", "Retrieval-Augmented Generation"]
+lastmod: 2026-11-16T12:00:00+05:30
+description: "A practical map of RAG architectures beyond plain vector search: retrieval methods, orchestration patterns and quality-control layers, with small reproducible experiments and a decision framework."
+summary: "RAG is more than vector search. A practical map of the main design choices (how you search, how you coordinate, how you verify), what each is good and bad at, and three small experiments that show where the common advice breaks."
+keywords: ["RAG Architectures", "Vector Database", "BM25", "Hybrid RAG", "Graph RAG", "Agentic RAG", "Corrective RAG", "Reranking", "Retrieval-Augmented Generation"]
 tags: ["RAG", "LLM Architecture", "NLP", "Information Retrieval"]
 TocOpen: true
 draft: false
 ---
 
-> *This article is for educational purposes. It discusses architectural patterns for RAG systems and does not endorse any specific vendor or tool.*
+> *This article is for educational purposes. It describes common design patterns for RAG systems and does not endorse any specific vendor or tool. The experiments are small and illustrative, not benchmarks.*
 
-When most developers hear "RAG," they picture one workflow: chunk documents, embed them, store the embeddings in a vector database, retrieve by similarity, and generate an answer. That pipeline appears in nearly every tutorial, and it is a good starting point for many prototypes.
+When most developers hear "RAG", they picture one workflow: split documents into chunks, turn the chunks into embeddings, store them in a vector database, retrieve the most similar chunks, and ask a language model to answer. That pipeline appears in most tutorials, and it is a good starting point.
 
-But it is not the only way to build a RAG system, and in some cases it is not the right one. The failure mode is familiar: a legal system looking for exact clause numbers, a clinical assistant looking for drug-interaction paths, or a support bot using identifiers and codes that embeddings do not prioritize. In those cases, a different retrieval strategy may matter more than a different model.
+It is not the only way to build a RAG system, though, and for some problems it is not the best one. Two examples:
 
-Consider a legal assistant. A lawyer asks: *"Find all clauses that reference Section 12(b)(3) of the Securities Act."* Vector search may return passages about securities regulations and investor protections — semantically relevant, but not the exact clause reference the user needed. The right clause is still in the corpus, but the retrieval method may not surface it efficiently.
+* A lawyer asks: *"Find all clauses that reference Section 12(b)(3)."* Vector search may return passages that are *about* similar regulations, while the clause that literally mentions "12(b)(3)" ranks lower. The user needed an exact reference, not a similar topic.
+* A clinician asks: *"Which of this patient's current medications interact with warfarin?"* The answer has to combine the patient's medication list with drug-interaction knowledge. That is a relationship question across sources, and in practice it is often better served by structured data (a medication table, a curated interaction database) than by searching text at all.
 
-Or consider a medical knowledge base. A doctor asks: *"Which of this patient's current medications interact with warfarin?"* Answering this requires connecting patient records, medication lists, and drug-interaction relationships — something a single vector lookup usually does not model well.
+The point is not that vector search is bad. It is that **retrieval is a design choice**, and different questions need different choices. This post maps out those choices and how to decide between them, with three small experiments that test some common claims along the way. (Ingestion, chunking and evaluation are covered in more depth in an earlier post, [Why Naive RAG Fails in Healthcare](/posts/why-naive-rag-fails-healthcare/).)
 
-These are not edge cases. They are common workloads. The main point is not that vector search is bad; it is that **retrieval strategy is a design choice that should match the problem**, and some real systems need more than a single vector index.
-
-In a [previous post](/posts/why-naive-rag-fails-healthcare/), I explored why naive RAG fails in healthcare and how to fix it. This post zooms out: beyond that single pipeline, what other patterns exist, when does each one work best, and how do you decide?
-
-> **TL;DR: what you'll learn**
+> **TL;DR**
 >
-> | Pattern | What it is | Typical use | Tradeoff |
-> | :--- | :--- | :--- | :--- |
-> | Vector RAG | Retrieval by embedding similarity | Semantic questions, paraphrase matching | Weak on exact identifiers |
-> | Keyword RAG (BM25) | Retrieval by term overlap | Exact terms, codes, IDs, entity names | Weak on paraphrase and concept matching |
-> | Hybrid RAG | Combine vector and keyword retrieval | General production search | More infrastructure complexity |
-> | Graph RAG | Retrieve by traversing relationships | Multi-hop and entity-relationship questions | More engineering and extraction complexity |
-> | Agentic RAG | LLM chooses tools and search paths | Multi-source, open-ended research | Higher latency and cost |
-> | Self-Correcting RAG | Evaluate and retry/refuse before answering | High-stakes domains | Adds extra evaluation loop |
+> | Layer | The question it answers | Options covered here |
+> | :--- | :--- | :--- |
+> | **Retrieval** | How do we find candidate information? | Vector, keyword (BM25), hybrid, metadata filters and SQL, graph |
+> | **Orchestration** | How many searches, and who decides? | Single-shot, adaptive, agentic |
+> | **Quality control** | How do we check before answering? | Reranking with thresholds, corrective retrieval, answer verification |
 >
-> These are not all the same kind of thing. Some are retrieval methods, some are orchestration patterns, and some are quality-control layers. The point is not to memorize them as a rigid taxonomy, but to understand the design choices they represent.
+> These layers combine: a system can use hybrid retrieval, an agent to choose tools, and a reranker plus a verifier on top. "Graph RAG vs. agentic RAG" is usually not an either-or choice.
 
 ---
 
-## Two Ways to Think About RAG
+## A Map of the Design Space
 
-Before diving into each pattern, it helps to separate two design decisions that often get conflated:
-
-1. **How do you search?** — This is the *retrieval method*: vector similarity, keyword matching, SQL queries, graph traversal, or a combination of them.
-2. **How do you coordinate?** — This is the *orchestration pattern*: do you search once and generate, evaluate the results and retry, or let an agent choose tools and plans across multiple sources?
-
-These axes are independent. You can combine a vector retrieval method with self-correcting orchestration, or a hybrid retrieval method with an agentic coordinator. The six patterns below sit at different points in this space:
+Many articles list "types of RAG" side by side: vector RAG, hybrid RAG, graph RAG, agentic RAG, corrective RAG. That list is useful, but it mixes different kinds of decisions. It helps to sort them into three layers:
 
 ```text
-                         How do you search?
-                 ┌────────────────────────────────────┐
-                 │  Vector    Keyword   Hybrid   Graph │
-   How do   ─────┼────────────────────────────────────┤
-   you      One  │  Vector    BM25     Hybrid   Graph │
-   coordinate?   │  RAG       RAG      RAG      RAG   │
-            ─────┼────────────────────────────────────┤
-            Check│  Self-correcting RAG                │
-            first│  (wraps around any search method)   │
-            ─────┼────────────────────────────────────┤
-            Plan │  Agentic RAG                        │
-            &    │  (picks which search to use)        │
-            adapt│                                     │
-                 └────────────────────────────────────┘
+                        +--------------------------------------------------+
+  Quality control       |  reranking + thresholds, corrective retrieval,   |
+  "is this good         |  answer verification, refusal                    |
+   enough to answer?"   +--------------------------------------------------+
+                                            |
+                        +--------------------------------------------------+
+  Orchestration         |  single-shot  ->  adaptive  ->  agentic          |
+  "how many searches,   |  (one search)    (decide how    (an LLM picks    |
+   and who decides?"    |                   much to do)    tools and steps)|
+                        +--------------------------------------------------+
+                                            |
+                        +--------------------------------------------------+
+  Retrieval             |  vector | keyword (BM25) | hybrid | metadata     |
+  "how do we find       |  filters | SQL | graph                           |
+   information?"        +--------------------------------------------------+
 ```
 
-The top row is about **what kind of search** you use. The bottom two rows are about **how the system chooses and verifies retrieval**. This is not meant to be a formal taxonomy; it is a map of the design space.
+With this map, many design questions become easier to frame. "Should I use graph RAG or agentic RAG?" turns into two separate questions: does my data need graph *retrieval*, and do my questions need agentic *orchestration*? An agent can use graph retrieval as one of its tools.
 
-The practical lesson: do not pick a pattern just because it sounds advanced. Pick it because it solves the retrieval problem you actually have. Let's start from the simplest and build up.
+The rest of the post walks through the layers from the bottom up.
+
+### A quick RAG refresher
+
+A language model can only answer from what it learned in training or what is in its prompt. **Retrieval-Augmented Generation** (Lewis et al., 2020) finds relevant passages from your own data and puts them in the prompt, so the model can answer from them and cite them. A RAG system has an **offline** part (process and index documents) and an **online** part (receive a question, retrieve, generate):
+
+```text
+Offline:  documents -> split into chunks -> index (embeddings and/or keywords)
+Online:   question -> retrieve top chunks -> prompt with the chunks -> LLM -> answer with citations
+```
+
+Everything below changes *how* the retrieve step works, *how many times* it runs, or *what checks* happen around it.
 
 ---
 
-## A Quick RAG Refresher
+## Layer 1: Retrieval
 
-If you already know how RAG works, skip to the next section. If not, here is the idea in four sentences.
+### Vector retrieval: matching by meaning
 
-A language model can only answer from what it has seen during training or what you put in its prompt. **Retrieval-Augmented Generation** puts relevant documents into the prompt so the model can answer questions about your private data (Lewis et al., 2020). The standard pipeline has two phases: an **offline** phase (process and index your documents) and an **online** phase (receive a question, retrieve relevant chunks, and generate an answer). Everything below is a variation on *how* those two phases work.
+**How it works.** An embedding model turns each chunk into a vector (a list of numbers, for example 384 of them for `all-MiniLM-L6-v2`). Texts with similar meaning tend to get vectors that point in similar directions. At query time, the question is embedded the same way, and a vector index (FAISS, Chroma, Qdrant, pgvector and others) returns the chunks with the highest cosine similarity.
 
-```text
-Offline:   Documents → Split into chunks → Convert to embeddings → Store in index
+**Good at:** paraphrases and concept matching. A question about "heart attack" can find a passage that only says "myocardial infarction".
 
-Online:    Question → Search the index → Retrieve top chunks → Pass to LLM → Answer
-```
+**Weak at:** exact identifiers. Embeddings represent overall meaning, not exact strings, so two codes that look alike but mean different things can land close together.
 
-This default pipeline uses **vector search** (embedding similarity) as its retrieval method. The six architectures below each change either the retrieval method, the orchestration around it, or both.
+**A small experiment.** How close do two different diagnosis codes get? I measured cosine similarity (1.0 means identical direction) with two open-source embedding models, `all-MiniLM-L6-v2` and `bge-small-en-v1.5`. Guess first, then see the results:
 
----
+{{< similarity-guess >}}
 
-## 1. Vector RAG — The Semantic Baseline
+In this check, two *different* diabetes codes were more similar to each other than a pair of *true synonyms*, in both models. Two different drugs with similar spelling also scored higher than the synonym pair in the smaller model. This is only two models and a handful of pairs, and scores are model-specific, but it suggests why exact identifiers often need help from other retrieval methods. (The code to reproduce this is at the end of the post.)
 
-**Analogy:** Describing a book to a librarian who understands meaning. You say *"I need something about managing high blood pressure in elderly patients,"* and the librarian finds relevant books even if none use those exact words.
+### Keyword retrieval (BM25): matching by words
 
-### How it works
+**How it works.** BM25 (Robertson & Zaragoza, 2009) scores a document by the query words it contains. Three ideas drive the score:
 
-Each document chunk is converted into a dense numerical vector (an "embedding") using a model like `all-MiniLM-L6-v2`. These vectors capture semantic meaning: chunks about similar topics land close together in vector space. At query time, the question is also embedded, and a vector database (FAISS, Pinecone, Weaviate, Qdrant, or Chroma) returns the nearest chunks by cosine similarity.
+* **Term frequency:** a word that appears more often in a document counts more, but with diminishing returns.
+* **Inverse document frequency:** rare words (like `E11.9`) count much more than common words (like "patient").
+* **Length normalization:** long documents do not win just because they contain more words.
 
-```text
-Question: "What causes heart failure?"
-                ↓
-        Embed the question
-                ↓
-  Find nearest vectors in the index
-                ↓
-  Top chunks (even if they say "cardiac insufficiency"
-  instead of "heart failure") → LLM → Answer
-```
+It runs on an **inverted index**, a map from each word to the documents that contain it, much like the index at the back of a book. Elasticsearch and OpenSearch use BM25 as their default ranking function. No embedding model or vector database is needed, so a keyword-only RAG system is entirely possible.
 
-### When it works
+**Good at:** rare, exact terms: drug names, clause numbers, error codes, product IDs.
 
-- **Semantic questions** where the user's wording varies: "heart attack" matches "myocardial infarction."
-- Unstructured text: articles, reports, documentation, PDFs.
-- Moderate-sized corpora where embedding quality stays high.
+**Weak at:** synonyms and paraphrases. "Heart attack" will not match a passage that only says "myocardial infarction".
 
-### When it fails
+**A common misconception: BM25 does not guarantee exact matches.** It ranks *tokens* (the pieces the text is split into), so everything depends on how text and queries are tokenized. A small experiment with the `rank_bm25` library and a document containing "Patient diagnosed with E11.9, started on metformin":
 
-- **Exact terms.** ICD codes (`E11.9`), drug names, section references, phone numbers — embeddings compress these into the same region of vector space as similar-looking but factually different terms. `E11.9` (Type 2 diabetes) and `E10.9` (Type 1 diabetes) may end up with nearly identical embeddings.
-- **Long documents** where a single chunk loses context. (Parent-child chunking addresses this — I covered it in [the previous post](/posts/why-naive-rag-fails-healthcare/).)
-- Queries that depend on exact word matching, not semantic similarity.
+| Setup | Query | Score of the right document |
+| :--- | :--- | ---: |
+| Whitespace tokenizer | `E11.9` | **0.000** (the document's token is `e11.9,` with the comma attached) |
+| Tokenizer that keeps codes together and drops punctuation | `E11.9` | 0.463 |
+| Same tokenizer | `E119` (written without the dot) | **0.000** |
 
-> **Remember:** Vector retrieval is strongest when semantic similarity matters. It is not a substitute for exact-match lookup when the task depends on IDs, codes, clause numbers, or product names. In those cases, lexical retrieval or metadata filtering often performs better.
+{{< token-playground >}}
 
----
+So for identifiers, BM25 works best together with **normalization** (one standard form for each code), an **exact-match field** or metadata filter for known ID formats, and tests that cover the formats users actually type.
 
-## 2. Keyword RAG (BM25) — Purpose-Built for Exact Matches
+### Hybrid retrieval: combining both
 
-**Analogy:** Looking up a term in the index at the back of a textbook. You find exactly "Section 12(b)(3)" on page 47. Fast, precise, and reliable — but it will not help if the passage uses different words for the same concept.
-
-### How it works
-
-BM25 (Best Matching 25) is a scoring function from the 1990s that ranks documents by how well they match the query's keywords, weighted by term frequency and document length (Robertson & Zaragoza, 2009). No embeddings, no neural network, no vector database — just word matching with smart weighting. Elasticsearch and OpenSearch use BM25 by default.
-
-**This is a fully vector-free RAG architecture.** You do not need an embedding model or a vector database to build it. An inverted index and a language model are enough.
+**How it works.** Run vector search and BM25 on the same question, then merge the two ranked lists. A widely used merge method is **Reciprocal Rank Fusion (RRF)** (Cormack et al., 2009): each document gets `1 / (k + rank)` from every list it appears in, and the totals are summed.
 
 ```text
-Question: "metformin dosage for E11.9"
-                ↓
-         Tokenize into keywords
-                ↓
-  Look up "metformin," "dosage," "E11.9" in inverted index
-                ↓
-  Score each document by keyword overlap (BM25) → Top-k → LLM → Answer
+question --+--> vector search --> ranked list A --+
+           |                                      +--> RRF merge --> final list --> (rerank) --> LLM
+           +--> BM25 search   --> ranked list B --+
 ```
-
-An **inverted index** maps every word to the list of documents that contain it — like the index at the back of a book, but for the entire corpus. Lookup is nearly instant, even on millions of documents.
-
-### When it works
-
-- **Exact identifiers:** drug names, legal clause numbers, error codes, product SKUs, ICD codes.
-- Terminology-heavy domains where the same term always means the same thing.
-- Very large corpora — inverted indices are among the fastest search structures in computer science.
-- When you want a simple, low-cost setup without GPU-heavy embedding models.
-
-### When it fails
-
-- **Synonyms and paraphrases.** "Heart attack" will not match a document that only says "myocardial infarction."
-- Semantic questions where the user's wording differs from the source text.
-
-> **Remember:** BM25 is strongest when the query is built around exact terms, IDs, or names. It is much weaker when the task depends on synonyms, paraphrase, or latent concept similarity. In the real world, most production systems use it as one input to a larger retrieval pipeline, not as a standalone answer to every question.
-
----
-
-## 3. Hybrid RAG — Combining Semantic and Lexical Retrieval
-
-**Analogy:** Using *both* the librarian (who understands meaning) *and* the textbook index (which finds exact terms), then merging their recommendations into one ranked list.
-
-### How it works
-
-Run vector search and BM25 in parallel on the same query, then combine the two ranked lists using a fusion strategy. The most common is **Reciprocal Rank Fusion (RRF):**
-
-```text
-Question ──┬──→ Vector search → Ranked list A ──┐
-           │                                     ├──→ RRF merge → Final ranked list → LLM → Answer
-           └──→ BM25 search   → Ranked list B ──┘
-```
-
-RRF scores each document by its reciprocal rank in each list and sums the scores. A document ranked #1 in one list and #5 in the other scores higher than a document ranked #3 in both. It is simple, robust, and widely used, but it is not automatically the best fusion method for every workload (Cormack et al., 2009).
 
 ```python
 def reciprocal_rank_fusion(ranked_lists, k=60):
-    """Merge multiple ranked lists using RRF.
-    k controls how much lower ranks are discounted (default 60)."""
+    """Merge several ranked lists of document ids. k dampens the influence of top ranks."""
     scores = {}
     for ranked_list in ranked_lists:
-        for rank, doc_id in enumerate(ranked_list):
-            scores[doc_id] = scores.get(doc_id, 0) + 1 / (k + rank + 1)
+        for rank, doc_id in enumerate(ranked_list, start=1):
+            scores[doc_id] = scores.get(doc_id, 0.0) + 1.0 / (k + rank)
     return sorted(scores, key=scores.get, reverse=True)
-
-# Example: merge vector search results and BM25 results
-final_ranking = reciprocal_rank_fusion([vector_results, bm25_results])
 ```
 
-### When it works
+RRF only uses ranks, not raw scores, which is a key advantage: vector similarities and BM25 scores live on completely different scales, and RRF does not need to compare them. With `k = 60`, a document ranked 1st in one list and 5th in the other scores 1/61 + 1/65 ≈ 0.03178, while a document ranked 3rd in both scores 2/63 ≈ 0.03175. The difference is tiny: RRF mostly rewards documents that appear near the top of *both* lists.
 
-- **Many production RAG systems converge on hybrid search**, because real-world queries mix semantic intent with exact terms: *"What is the recommended dosage of metformin for Type 2 diabetes (ICD E11)?"*
-- Any domain where users sometimes use jargon and sometimes use plain language.
-- When you need both recall (finding relevant content) and precision (finding exact matches).
+{{< rrf-playground >}}
 
-### When it fails
+RRF is easy to set up, but not completely tuning-free. The constant `k`, how many candidates each retriever returns before merging, and optional per-retriever weights all affect results.
 
-- Still **single-hop**: one retrieval step, one set of results. If the answer requires chaining multiple facts together, hybrid search alone will not solve it.
-- Adds infrastructure complexity: you now need both a vector index and a keyword index.
+**Good at:** mixed workloads, where some questions are about meaning and others contain exact terms. Several search engines and vector databases now offer hybrid search as a built-in feature.
 
-### What I'd add to my project
+**Trade-offs:** two indexes to build and keep in sync, more moving parts, and more to evaluate. Hybrid is not automatically better than either method alone; whether it helps depends on your questions, which is why measuring matters (see [How to evaluate](#how-to-evaluate-a-rag-system)).
 
-My Healthcare RAG system currently uses vector search with a cross-encoder reranker. Adding BM25 for hybrid retrieval is an improvement I'd consider — it would help catch the exact drug names and ICD codes that embeddings sometimes miss.
+### Metadata filters and SQL: when the answer is structured
 
-> **Remember:** Hybrid search combines the strengths of vector and keyword retrieval. It is a strong default when your workload mixes semantic intent with exact names, IDs, or terminology, but it is still a single-hop retrieval step. It does not magically solve multi-step or relationship-heavy questions.
+Two retrieval methods are easy to overlook because they are not "AI":
+
+* **Metadata filtering** narrows the search space before or during retrieval: by document type, date, department, source or the user's permissions. In real systems, this can matter as much as the choice between vector and keyword search. A correct answer from a document the user is not allowed to see is still a wrong answer.
+* **SQL (Text-to-SQL)**: when the answer lives in tables ("How many patients were readmitted last month?"), an LLM can translate the question into a SQL query and the system runs it. This avoids embedding table rows at all. Doing it safely needs a read-only database user, validation of the generated query, limits on which tables are visible, and the same permission checks as the rest of the application.
+
+### Graph retrieval: when relationships matter
+
+**How it works.** Information is stored as a **knowledge graph**: entities (patients, drugs, companies, cases) are nodes, and relationships (*takes*, *interacts with*, *supplies*, *cites*) are edges. Retrieval follows edges to collect connected facts that no single chunk contains.
+
+"Graph RAG" is used for several different things, and it helps to keep them apart:
+
+* **Querying an existing knowledge graph.** The graph is curated (for example, a drug-interaction database). The system translates the question into a graph query, and the LLM explains the results. Much of the reliability comes from the curated data.
+* **Building a graph from documents with an LLM.** An LLM extracts entities and relationships from text, and retrieval traverses the result. This works on unstructured data, but extraction errors become retrieval errors.
+* **Graph-based summarization.** Microsoft's GraphRAG work (Edge et al., 2024) extracts a graph, groups it into communities of closely connected entities, writes a summary for each community, and uses those summaries to answer broad "global" questions, such as the main themes across a whole document collection, which the paper reports top-k chunk retrieval handles poorly.
+
+**Good at:** multi-hop questions ("Which suppliers of company X also supply company Y?") and domains where connections matter more than individual facts. Traversal paths can also be shown to users as an explanation.
+
+**Hard parts:** recognizing that "Metformin", "metformin HCl" and "Glucophage" are the same entity; resolving conflicting relationships; keeping each edge linked to its source document; and updating the graph when documents change. For simple factual questions, a graph adds cost without adding much.
+
+> **Retrieval in one line:** match the retrieval method to how your questions are phrased (meaning, exact terms, structure or relationships), and use metadata filters everywhere.
+
+{{< check q="Your documents write a diagnosis code as `E11.9`, but users often type `E11-9`. Which change is most likely to help?" options="Switch to a larger embedding model|Normalize identifiers to one form, both when indexing and when searching|Retrieve the top 50 chunks instead of the top 10" answer="2" explain="Normalization turns both spellings into the same token, so keyword search can match them. A larger embedding model may still treat similar-looking codes as close, and retrieving more chunks mostly adds noise." >}}
+
+{{< check q="With RRF and k = 60, which document ranks higher: one ranked 1st in one list and 5th in the other, or one ranked 3rd in both?" options="1st and 5th, by a large margin|1st and 5th, but only by a tiny margin|3rd in both" answer="2" explain="1/61 + 1/65 is about 0.03178, and 2/63 is about 0.03175. RRF mainly rewards documents near the top of both lists. Try it in the playground above." >}}
 
 ---
 
-## 4. Graph RAG — When Relationships Matter
+## Layer 2: Orchestration
 
-**Analogy:** A detective's evidence board — pins for people, places, and events, connected by strings. You do not just search for a keyword; you follow connections. *"Who was at the scene AND has a prior record AND is connected to the suspect?"*
+### Single-shot, adaptive and agentic
 
-### How it works
+Orchestration decides how many retrieval steps run and who decides them:
 
-Instead of (or in addition to) embedding chunks, you build a **knowledge graph** where entities are nodes and their relationships are edges. Retrieval traverses the graph to find connected information that no single chunk contains.
+* **Single-shot:** retrieve once, then answer. Predictable, cheap and easy to test, which makes it a sensible place to start.
+* **Adaptive:** choose how much retrieval to do per question: no retrieval, one search, or several steps. Adaptive-RAG (Jeong et al., 2024) trains a small classifier to predict question complexity and pick the strategy.
+* **Agentic:** an LLM agent gets a set of tools (vector search, SQL, graph queries, web search, APIs) and decides which to call, with what query, and whether it has enough evidence to answer.
 
 ```text
-Offline:   Documents → Extract entities & relationships → Build knowledge graph
-
-Online:    Question → Identify entities in the question
-                         ↓
-             Traverse graph from those entities
-                         ↓
-             Collect connected subgraph → LLM → Answer
+question -> agent (LLM with tools)
+               |-- tool: hybrid search over documents
+               |-- tool: SQL query over structured data
+               |-- tool: graph lookup for relationships
+               |-- tool: web search for recent information
+               v
+            enough evidence? -- no --> call another tool or rewrite the query (within a step budget)
+               | yes
+               v
+            answer with citations
 ```
 
-A question like *"Which of this patient's medications interact with warfarin?"* needs three steps:
+**Good at:** questions that span several sources or need several dependent steps, where the right path is not known in advance.
 
-1. Find the patient node and their medication edges.
-2. For each medication, look up drug-interaction edges.
-3. Filter for interactions involving warfarin.
+**Hard parts.** Agentic systems add failure modes that single-shot systems do not have:
 
-No single vector lookup can do this. The graph connects the dots.
+* **Wrong tool or wrong query.** The agent is an LLM making probabilistic decisions; it can pick a poor tool or phrase a poor search.
+* **Loops and runaway cost.** Without a maximum number of steps and a time budget, an agent can keep searching. Every step adds at least one LLM call, so latency and cost grow with the number of steps.
+* **Growing context.** Each tool result is added to the prompt, which can crowd out the evidence that matters.
+* **Prompt injection.** Retrieved documents and web pages can contain instructions ("ignore previous instructions and..."). Retrieved text must be treated as data, never as instructions to follow (Greshake et al., 2023).
+* **Harder to test and debug.** The same question can take different paths on different runs, so step-by-step tracing is essential.
 
-### When it works
+A practical middle ground is a **fixed workflow with a router**: a few predefined paths (for example, "document search", "SQL", "both") and a classifier or simple rules that pick one. This is easier to test than a free-form agent, and for many applications it may be enough.
 
-- **Multi-hop questions:** *"Which suppliers of company X also supply its competitor Y?"*
-- **Relationship-heavy domains:** medicine (drug interactions, symptom–disease links), law (case precedent chains), fraud detection (transaction networks), supply chain analysis.
-- When you need **explainable** retrieval — graph traversal paths are human-readable, unlike vector similarity scores.
+> **Orchestration in one line:** add decision-making only when questions really need several sources or steps, and give it budgets and tracing from day one.
 
-### When it fails
-
-- **Graph construction is expensive and error-prone.** Extracting entities and relationships from unstructured text is itself an LLM task, and extraction errors become retrieval errors. Microsoft's GraphRAG work (2024) demonstrated the potential of this approach but also highlighted the cost and complexity.
-- **Simple factual questions** do not need a graph. "What is the dosage of aspirin?" is faster and cheaper with a vector or keyword lookup.
-- Adds operational complexity: you need a graph database (Neo4j, Amazon Neptune) alongside your other indices.
-
-> **Remember:** Graph RAG shines when the *connections between facts* matter more than the facts themselves. If your questions are about individual facts, a graph adds complexity you may not need.
+{{< check q="An assistant answers questions from one collection of HR policy documents. Is an agent a good first design?" options="Yes, because agents are more accurate|Probably not: start single-shot, measure, and add a router or agent only if questions need several sources or steps|Yes, as long as it can also search the web" answer="2" explain="With one document source, an agent mainly adds latency, cost and new failure modes. A single-shot pipeline is easier to test, and the measurements tell you whether anything more is needed." >}}
 
 ---
 
-## 5. Agentic RAG — Let the System Decide
+## Layer 3: Quality Control
 
-**Analogy:** Instead of you choosing which library to visit, you hire a research assistant. You tell them the question, and they decide: *"I'll check the medical database first, then cross-reference with the drug interaction list, and if I still don't have enough, I'll search the clinical guidelines."* They plan, execute, and evaluate — on their own.
+### Reranking and thresholds
 
-### How it works
+A **cross-encoder reranker** reads the question and each candidate passage *together* and scores how well the passage answers the question. It is slower than vector search but usually more precise, so the common pattern is: retrieve a wider set (say, the top 20), rerank, keep the best few, and refuse to answer when no passage passes a minimum score.
 
-An LLM-powered **agent** receives the question and has access to multiple retrieval **tools** — vector search, SQL queries, graph lookups, web search, APIs. The agent decides which tool to call, what query to send, whether the result is good enough, and whether to try another tool.
+**A small experiment: are reranker scores stable enough for a fixed threshold?** The question "Who won the 2022 football World Cup?" was scored against the same unrelated passage ("Keep this medicine out of the reach of children."), alone and together with other medical passages, using FlashRank 0.2.10:
+
+| Batch size | `ms-marco-MultiBERT-L-12` | `ms-marco-MiniLM-L-12-v2` |
+| ---: | ---: | ---: |
+| 1 passage | 0.2126 | 0.0000 |
+| 10 passages | **0.6877** | 0.0000 |
+| 20 passages | 0.0028 | 0.0000 |
+
+With the first model, the score of the *same* irrelevant passage changed from 0.003 to 0.69 depending on what else was in the batch, so a fixed threshold such as 0.05 would sometimes accept it. The second model scored it near zero every time. This is one small test with one library version, so it says nothing about how common the problem is. It does show why it is worth checking, **before relying on a score threshold, that the scores are stable and calibrated** on your own questions, including off-topic ones.
+
+### Corrective and self-correcting retrieval
+
+"Self-correcting RAG" is a family of ideas rather than one method. Two well-known research approaches:
+
+* **Corrective RAG (CRAG)** (Yan et al., 2024) adds a lightweight *retrieval evaluator* that estimates whether the retrieved documents are relevant, and triggers one of three actions:
+  * **Correct:** refine the retrieved documents, keeping only the useful parts;
+  * **Incorrect:** discard them and fall back to web search;
+  * **Ambiguous:** combine both sources.
+* **Self-RAG** (Asai et al., 2023) trains the language model itself to decide when to retrieve, and to critique its own output with special *reflection* tokens (is this passage relevant, is this claim supported, is this answer useful).
+
+In practical systems, the same family includes simpler pieces: query rewriting and a second search before giving up, reranker thresholds with refusal, and an **LLM judge** that scores whether the final answer is supported by the retrieved context.
+
+These checks are useful, but they have limits worth stating clearly:
+
+* **Relevant is not the same as sufficient.** A passage can be on-topic and still not contain the answer, or contradict another source.
+* **An LLM judge is not independent fact-checking.** A model grading another model's answer can approve unsupported claims; judges also show biases such as preferring longer answers (Zheng et al., 2023).
+* **Thresholds trade errors against refusals.** Stricter settings reduce wrong answers but increase refusals of good questions. Both rates need measuring.
+
+In high-stakes domains such as healthcare, these layers add useful checkpoints, but they do not make a system safe on their own. That also needs domain-specific validation, clear limits on how the system may be used, and human review.
+
+> **Quality control in one line:** verify before answering, calibrate thresholds on real questions, and treat automated checks as triage, not proof.
+
+{{< check q="Your reranker gives an obviously off-topic passage a score of 0.69. What is the most useful next step?" options="Raise the threshold above 0.69 and move on|Check whether the scores are stable across batch sizes and calibrated on your own questions, including off-topic ones|Nothing: a cross-encoder is more accurate than vector search, so trust it" answer="2" explain="A threshold is only as reliable as the scores behind it. In the experiment above, the same passage scored anywhere from 0.003 to 0.69 depending on the batch, so first check the scores, then choose a threshold." >}}
+
+{{< check q="An LLM judge marks an answer as faithful. Does that prove the answer is correct?" options="Yes, that is what faithfulness means|No: it only checks the answer against the retrieved text, which can be incomplete or wrong, and judges have known biases" answer="2" explain="Faithfulness means the answer is supported by the retrieved context. If retrieval missed a key document, a faithful answer can still be wrong. Use judges as triage, together with good retrieval and human review." >}}
+
+---
+
+## Putting It Together: A Reference Architecture
+
+Here is one way the layers can fit together. It is a starting point to adapt, not the only correct design:
 
 ```text
-User question → Agent (LLM with tools)
-                   │
-                   ├──→ Tool 1: Vector search on clinical docs → results
-                   ├──→ Tool 2: SQL query on patient database → results
-                   ├──→ Tool 3: Graph lookup for drug interactions → results
-                   └──→ Tool 4: Web search for latest guidelines → results
-                          ↓
-                 Agent evaluates all results
-                          ↓
-                 Enough? ──→ Yes → Generate answer with citations
-                          └─→ No  → Reformulate and call another tool
+[question + user identity]
+        |
+[access control: which documents may this user see?]   -> applied as a filter to every retrieval
+        |
+[router: what does this question need?]
+        |-- documents only --> [hybrid retrieval: vector + BM25, merged with RRF]
+        |-- structured data -> [Text-to-SQL, read-only]
+        |-- several sources -> [agent with tools, step and time budgets]
+        v
+[rerank, keep the best passages above a calibrated threshold]  -> nothing left: refuse
+        |
+[generate an answer with citations]
+        |
+[verify: is the answer supported by the cited passages?]  -> not supported: refuse or retry
+        |
+[log tokens, cost and latency; cache only grounded answers]
 ```
 
-Frameworks like LangChain Agents, LlamaIndex Agents, and CrewAI provide abstractions for this pattern, but the core idea is straightforward: the LLM acts as a **router and planner**, not just a generator.
+A few details matter more than they look:
 
-### When it works
-
-- Questions that **span multiple data sources:** *"Based on this patient's records AND the latest WHO guidelines, what treatment options exist?"*
-- **Open-ended research** where the right data source is not known in advance.
-- Complex workflows where retrieval needs to be iterative and adaptive.
-
-### When it fails
-
-- **Latency.** Every tool call involves an LLM inference step plus a retrieval call. A simple question that needs one lookup can take 3–5× longer through an agent.
-- **Cost.** Multiple LLM calls per question add up, especially with larger models.
-- **Reliability.** The agent can choose the wrong tool, form a bad query, or loop without converging. **Guardrails are essential:** maximum iterations, timeouts, and a fallback to a simpler pipeline.
-- **Simple questions.** *"What is the capital of France?"* does not need an agent — it needs one fast lookup.
-
-> **Remember:** Agentic RAG is powerful but adds latency, cost, and failure modes. Use it when the question genuinely requires multi-step reasoning or multi-source retrieval, not as a default.
+* **The router should be evaluated like any model.** Question length and keywords are cheap signals, but a short question ("Why did revenue fall?") can be hard, and a long one can be easy. Measure the router's decisions on labeled questions.
+* **Caching needs scoping.** A cached answer must only be reused for the same question, the same allowed documents and the same document versions. In multi-user or patient-specific systems, a cache that ignores permissions can leak data.
+* **Security belongs in the architecture**, not as an afterthought: authentication, permission-aware retrieval, audit logs, careful handling of personal data, and treating retrieved text as untrusted input.
 
 ---
 
-## 6. Self-Correcting RAG (CRAG) — Check Before You Answer
+## How to Evaluate a RAG System
 
-**Analogy:** A journalist who fact-checks every article before publishing. Write the draft, verify each claim against the sources. If a claim is not supported, rewrite it or remove it. If nothing in the sources supports the answer at all, say *"I don't have enough information"* instead of guessing.
+Without measurement, every choice in this post is an educated guess. A useful evaluation looks at each layer separately, so failures can be traced to their source:
 
-### How it works
+| Layer | What to measure | Common metrics |
+| :--- | :--- | :--- |
+| Retrieval | Is the right passage found? | Recall@k, MRR, nDCG |
+| Reranking | Is it ranked near the top? | MRR, nDCG, before vs. after reranking |
+| Generation | Is the answer correct and supported? | Answer correctness, faithfulness |
+| Citations | Do the citations support the claims? | Citation precision and recall |
+| Refusals | Does it refuse the right questions? | Wrong-answer rate vs. refusal rate |
+| Operations | Is it affordable and fast enough? | Latency (p50/p95), tokens and cost per question |
 
-After the initial retrieval, the system **evaluates** whether the retrieved documents actually support an answer. Depending on the evaluation, it takes one of three paths (Yan et al., 2024):
+A practical process:
 
-```text
-User question → Retrieve → Evaluate relevance of retrieved chunks
-                               │
-                               ├──→ Relevant     → Generate answer → Check faithfulness → Return
-                               │
-                               ├──→ Ambiguous    → Reformulate query → Retrieve again → Re-evaluate
-                               │
-                               └──→ Not relevant  → Try a different strategy OR refuse
-```
+1. Collect 50-200 **real questions** (or realistic ones written by people who know the domain), each labeled with the passage that answers it. Include some questions the documents *cannot* answer.
+2. Measure a simple baseline first.
+3. Change **one thing at a time** (add BM25, add a reranker, change chunk size) and compare against the baseline.
+4. Keep a change only if it improves the metric you care about without unacceptable cost or latency.
 
-The relevance check can be a **cross-encoder reranker** (fast, lightweight), an **LLM judge** (more nuanced, slower), or both in sequence.
-
-This is not a standalone retrieval method — it is a **quality layer** that wraps around *any* retrieval method. You can self-correct a vector RAG system, a hybrid system, or even an agentic one.
-
-### When it works
-
-- **High-stakes domains** where a wrong answer is worse than no answer: healthcare, legal, finance.
-- When your knowledge base is **incomplete** — the system can recognize gaps instead of hallucinating to fill them.
-- As a wrapper around any other architecture in this post.
-
-### When it fails
-
-- **Latency.** Every correction loop adds a round trip. In the worst case, the system retries 2–3 times before answering or refusing.
-- **Over-refusal.** A conservative relevance threshold can make the system refuse too often, frustrating users who asked perfectly reasonable questions. Threshold tuning is an ongoing process.
-- Requires real user queries to calibrate — synthetic test sets are usually not enough.
-
-### What I built
-
-My Healthcare RAG system uses a version of this: a cross-encoder reranker that rejects chunks below a relevance threshold, and an LLM judge that scores faithfulness after generation. If I were rebuilding it, I would add the retry loop — reformulate the query and search again before refusing.
-
-> **Remember:** Self-correcting RAG trades speed for safety. In healthcare and legal domains, that trade-off is usually worth it. In a chatbot for a recipe site, it is probably not.
-
----
-
-## Putting It Together: A Combined Reference Architecture
-
-Each architecture above solves one problem. A production system often combines several of them. Here is one reasonable way to put the pieces together — not the only way, but one that covers the most common failure modes:
-
-```text
-[User question]
-       ↓
-[0. Route: is the question simple or complex?]
-       ├──→ Simple (single fact, clear terms)
-       │         ↓
-       │    [1. Hybrid search: vector + BM25 in parallel]
-       │         ↓
-       │    [2. RRF merge → Cross-encoder rerank → Top 3]
-       │         ↓
-       │    [3. Generate answer with citations]
-       │         ↓
-       │    [4. Self-correction: evaluate faithfulness]
-       │         ├──→ Passed → Return answer
-       │         └──→ Failed → Refuse or retry with reformulated query
-       │
-       └──→ Complex (multi-source, multi-step, or relationship question)
-                 ↓
-            [1. Agent selects tools based on the question]
-                 ├──→ Hybrid search on document corpus
-                 ├──→ Graph traversal for entity relationships
-                 ├──→ SQL query for structured data
-                 └──→ Web search for recent information
-                 ↓
-            [2. Agent evaluates: enough evidence?]
-                 ├──→ No  → Call another tool or reformulate
-                 └──→ Yes → Merge results, rerank, apply token budget
-                              ↓
-                         [3. Generate answer with citations]
-                              ↓
-                         [4. Self-correction: evaluate faithfulness]
-                              ├──→ Passed → Return answer
-                              └──→ Failed → Refuse
-                                       ↓
-                                  [5. Cache grounded answers, log usage and cost]
-```
-
-The architectures from this post map onto this flow:
-- **Step 0** is a simple router (question length, keywords, number of entities) — not every question needs the agentic path.
-- **Steps 1–2 on the left** are **Hybrid RAG** with self-correction.
-- **Steps 1–2 on the right** are **Agentic RAG**, which can call **Graph RAG**, **SQL**, or **Hybrid search** as tools.
-- **Step 4 on both paths** is **Self-Correcting RAG (CRAG)**.
-- **Keyword RAG (BM25)** is part of every hybrid search call.
-- **Vector RAG** is the other half of every hybrid search call.
-- [Parent-child chunking and OCR](/posts/why-naive-rag-fails-healthcare/) happened at ingestion time, before any question is asked.
-
-Not every system needs every layer. Start with the simplest path that meets your retrieval requirements, measure your failures, and add complexity only when the evidence justifies it. Each layer adds latency, cost, and operational complexity.
-
----
-
-## How to Evaluate a RAG Architecture
-
-Choosing a pattern without measurement is guesswork. A practical evaluation should track more than just the final answer correctness. For each architecture, measure:
-
-- **Retrieval quality:** recall@k, nDCG, MRR, and whether the relevant document appears in the top results.
-- **Answer quality:** correctness, citation support, hallucination rate, and groundedness.
-- **Failure modes:** exact-term misses, multi-hop failures, over-refusal, bad tool selection, or looping agents.
-- **System cost:** latency, token usage, compute cost, and database/indexing overhead.
-- **Operational reliability:** index freshness, maintenance burden, and failure recovery.
-
-A simple evaluation matrix looks like this:
-
-| Pattern | Best evaluated on | Main failure to watch for | Typical cost profile |
-| :--- | :--- | :--- | :--- |
-| Vector RAG | Semantic paraphrase tasks | Exact identifiers and rare terms | Low to moderate |
-| Keyword RAG | Exact match, code lookup, legal/medical identifiers | Synonyms and concept matching | Low |
-| Hybrid RAG | Mixed query workloads | Still single-hop; may still miss graph tasks | Moderate |
-| Graph RAG | Multi-hop and entity-relationship tasks | Extraction errors and graph maintenance | Moderate to high |
-| Agentic RAG | Multi-source or tool-heavy tasks | Bad routing, loops, latency spikes | High |
-| Self-Correcting RAG | High-stakes, low-tolerance tasks | Over-refusal and extra latency | Moderate to high |
-
-For production systems, start with a benchmark built from your real user queries, not just synthetic examples. Label retrieval hits, answer correctness, and confidence failures. If a pattern fails mostly on exact terms, fix that with BM25 or metadata filters before building a more complex graph or agentic layer.
+This also answers the question "should I use hybrid search?" more reliably than a general rule can: try it on your labeled questions and see.
 
 ---
 
 ## How to Choose: A Decision Framework
 
-Do not pick an architecture because it sounds impressive. Pick it because it solves the specific retrieval problem you have.
+The picker below asks about your questions, your identifiers and the cost of a wrong answer. Treat its suggestion as a starting point to test, not a final answer.
 
 {{< rag-picker >}}
 
-| Your situation | Start with | Why |
+The same guidance as a table:
+
+| If most questions... | A reasonable starting point | Then check |
 | :--- | :--- | :--- |
-| Unstructured docs, semantic questions | **Hybrid RAG** (vector + BM25) | Covers both meaning and exact terms |
-| Structured data in a database | **Text-to-SQL** | Query the data directly — no embeddings needed |
-| Questions about relationships between entities | **Graph RAG** | Follow connections, not just match content |
-| Questions spanning multiple data sources | **Agentic RAG** | Let the agent decide where to look |
-| High-stakes domain (healthcare, legal, finance) | **Hybrid + Self-Correcting** | Verify before answering; refuse if unsure |
-| Simple FAQ or documentation lookup | **Vector or Keyword RAG** | Do not over-engineer what a simple search solves |
+| ask about meaning, in varied wording | Vector retrieval | Recall on paraphrased questions |
+| contain codes, IDs, names or clause numbers | BM25 with identifier normalization, often plus vector search | Recall on exact-ID questions |
+| mix both | Hybrid retrieval with RRF | Whether hybrid beats each method alone on your set |
+| need numbers from tables | SQL with a read-only connection | Query correctness, permission checks |
+| follow relationships between entities | A curated graph or database first; LLM-built graphs if needed | Entity resolution and extraction errors |
+| need several sources or dependent steps | A router or agent with budgets | Tool-choice accuracy, latency, cost |
+| would cause harm if answered wrongly | Any of the above, plus reranking thresholds, verification and human review | Wrong-answer rate vs. refusal rate |
 
-### They are not mutually exclusive
+### Other approaches worth knowing
 
-The reference architecture above combines several of them. The common layering pattern:
+Several techniques fit into the same three layers and deserve their own articles:
 
-- **Hybrid retrieval** (vector + BM25) as the search layer.
-- **Hierarchical chunking** (parent-child) for long documents.
-- **Self-correction** (reranker + judge + refusal) as the quality layer.
-- **Agentic orchestration** only when questions need multiple sources or multiple steps.
-
-My Healthcare RAG system already combines three of these: vector retrieval, hierarchical chunking, and self-correction. Adding BM25 for hybrid search, and an agentic layer for multi-document queries, would be the natural next steps.
-
----
-
-## Other Approaches Worth Knowing
-
-This post covered six architectures, but the RAG design space is broader. Other patterns that are worth exploring but deserve their own detailed treatment:
-
-- **Contextual RAG** (Anthropic, 2024) — prepend document-level context to each chunk before embedding, so the embeddings capture where each chunk fits in the broader document.
-- **Adaptive RAG** — dynamically choose how deep to search (single retrieval vs. iterative) based on question complexity, rather than always using the same pipeline.
-- **Multi-modal RAG** — retrieve and reason over images, tables, and text together, not just text chunks.
-- **Modular RAG** — treat each pipeline step (chunking, retrieval, reranking, generation) as a swappable module, making it easier to experiment and improve one step at a time.
-
-Each of these could fill its own article. The six architectures in this post cover the most common design decisions you will face when building a RAG system from scratch.
-
----
-
-## What I'd Build Differently Today
-
-Having built a single-shot hierarchical RAG system for healthcare ([source code](https://github.com/DeveshNathJha/Healthcare-Rag)), here is what I would change:
-
-1. **Add BM25 for hybrid search.** Drug names like "metformin" and ICD codes like "E11.9" are exact identifiers. Vector search sometimes misses them; BM25 would not.
-2. **Add a retry loop before refusing.** When the reranker scores everything below threshold, reformulate the query (simplify it, extract keywords) and search again before giving up.
-3. **Consider a lightweight graph for drug interactions.** Some questions (*"Does this medication interact with the patient's other prescriptions?"*) are inherently multi-hop. A small graph overlay on top of the vector index could handle these without rebuilding the whole system.
-4. **Keep single-shot for simple questions.** Not every question needs an agent. Route simple factual lookups to a fast hybrid search, and only invoke the agent for complex, multi-step queries.
-
-The takeaway: **start simple, measure where your system fails, and add complexity only where those failures demand it.** Every architecture layer you add increases latency, cost, and the surface area for bugs.
+* **Retrieval:** *multi-query retrieval* (search with several rephrasings of the question and merge the results); *contextual retrieval* (Anthropic, 2024: add a short description of the document to each chunk before indexing); *late chunking* (embed the whole document first, then split the token vectors into chunks); *hierarchical (parent-child) retrieval*; *multimodal retrieval* over images and tables.
+* **Orchestration:** *multi-hop retrieval* (each search uses the result of the previous one); *temporal retrieval* (prefer recent information when facts change over time).
 
 ---
 
 ## Conclusion
 
-RAG is not one architecture. It is a design space with many retrieval methods — some using vectors, some not — and orchestration patterns that can be mixed and matched.
+RAG is a design space, not a single pipeline. Separating it into three layers (how you retrieve, how you coordinate, and how you verify) makes the trade-offs easier to see, and makes it clear that most "types of RAG" are combined rather than chosen between.
 
-The most common mistake is treating "RAG" as a single pattern — chunk, embed, search, generate — and being surprised when it fails on exact terms, connected data, or multi-source questions. The second most common mistake is the opposite: reaching for an agentic graph RAG system when a simpler approach would have worked.
+The small experiments in this post also show that common one-line advice needs care: different codes can look more similar to an embedding model than true synonyms do; BM25 finds exact terms only if tokenization and normalization are right; and a reranker threshold is only as reliable as the reranker's scores.
 
-**Start with hybrid search. Add self-correction if accuracy matters. Add graph or agentic retrieval only when your questions genuinely need them. Measure before you add.**
-
-The [first post](/posts/why-naive-rag-fails-healthcare/) in this series covered why naive RAG fails in healthcare. This post explored what other architectures exist and when to use them. The thread across both: **most RAG quality problems trace back to retrieval choices, not model choices.**
+The most dependable path is usually the least exciting one: start simple, build a labeled set of real questions, measure each layer, and add complexity where the measurements show it is needed.
 
 ---
 
-### Further Reading
+### Reproduce the experiments
 
-* Lewis, P., et al. (2020). *Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks*. NeurIPS 2020.
-* Robertson, S., & Zaragoza, H. (2009). *The Probabilistic Relevance Framework: BM25 and Beyond*. Foundations and Trends in Information Retrieval.
-* Cormack, G., Clarke, C., & Buettcher, S. (2009). *Reciprocal Rank Fusion Outperforms Condorcet and Individual Rank Learning Methods*. SIGIR 2009.
-* Microsoft Research (2024). *GraphRAG: Unlocking LLM Discovery on Narrative Private Data*.
-* Yan, S., et al. (2024). *Corrective Retrieval-Augmented Generation (CRAG)*. arXiv preprint.
-* Gao, Y., et al. (2024). *Retrieval-Augmented Generation for Large Language Models: A Survey*. arXiv preprint.
-* Anthropic (2024). *Contextual Retrieval*. Blog post.
+<details>
+<summary>Python code for the three checks (click to expand)</summary>
+
+Tested with Python 3.12, sentence-transformers 6.2.0, rank_bm25 0.2.2 and FlashRank 0.2.10. Models download on the first run.
+
+```python
+import re
+
+import numpy as np
+from flashrank import Ranker, RerankRequest
+from rank_bm25 import BM25Okapi
+from sentence_transformers import SentenceTransformer
+
+# 1. Embedding similarity: different codes vs. true synonyms
+pairs = [
+    ("E11.9", "E10.9"),
+    ("Type 2 diabetes mellitus without complications (E11.9)",
+     "Type 1 diabetes mellitus without complications (E10.9)"),
+    ("heart attack", "myocardial infarction"),
+    ("metformin", "metoprolol"),
+    ("heart attack", "football match"),
+]
+for name in ["sentence-transformers/all-MiniLM-L6-v2", "BAAI/bge-small-en-v1.5"]:
+    model = SentenceTransformer(name)
+    for a, b in pairs:
+        va, vb = model.encode([a, b], normalize_embeddings=True)
+        print(f"{name}: {float(np.dot(va, vb)):.3f}  {a} | {b}")
+
+# 2. BM25 depends on tokenization
+docs = ["Patient diagnosed with E11.9, started on metformin 500 mg.",
+        "Type 1 diabetes (E10.9) managed with insulin.",
+        "Hypertension follow-up in 4 weeks."]
+naive = BM25Okapi([d.lower().split() for d in docs])
+print("whitespace, 'E11.9':", naive.get_scores(["e11.9"]))
+
+def tokenize(text):
+    return re.findall(r"[a-z0-9]+(?:\.[a-z0-9]+)*", text.lower())  # keep codes like e11.9 together
+
+better = BM25Okapi([tokenize(d) for d in docs])
+print("code-aware, 'E11.9':", better.get_scores(tokenize("E11.9")))
+print("code-aware, 'E119': ", better.get_scores(tokenize("E119")))
+
+# 3. Is a reranker score stable across batch sizes?
+query = "Who won the 2022 football World Cup?"
+target = "Keep this medicine out of the reach of children."
+fillers = [
+    "Amlodipine: initial dose 5 mg once daily for hypertension.",
+    "Maximum dose of amlodipine is 10 mg once daily.",
+    "Dose adjustment may be needed in hepatic impairment.",
+    "Follow-up visits are recommended every 4 weeks.",
+    "Do not drive if you feel dizzy after taking this medicine.",
+    "Store below 25 degrees Celsius.",
+    "Common side effects include ankle swelling and flushing.",
+    "Check blood pressure before each dose increase.",
+    "Tell your doctor about all other medicines you take.",
+    "Grapefruit juice may increase blood levels of some medicines.",
+    "Report chest pain or fainting immediately.",
+    "Use with caution in patients with heart failure.",
+    "Children under 6 years: safety not established.",
+    "Take the tablet at the same time each day.",
+    "Missed dose: take it as soon as you remember.",
+    "Overdose may cause very low blood pressure.",
+    "Do not stop taking it without medical advice.",
+    "Pregnancy: discuss risks and benefits with your doctor.",
+    "Elderly patients may start with a lower dose.",
+]
+for name in ["ms-marco-MultiBERT-L-12", "ms-marco-MiniLM-L-12-v2"]:
+    ranker = Ranker(model_name=name)
+    for n in (0, 9, 19):
+        passages = [{"id": 0, "text": target}] + [{"id": i + 1, "text": f} for i, f in enumerate(fillers[:n])]
+        scores = {r["id"]: r["score"] for r in ranker.rerank(RerankRequest(query=query, passages=passages))}
+        print(f"{name}: batch of {n + 1} -> {float(scores[0]):.4f}")
+```
+
+
+</details>
+
+### Further reading
+
+* Lewis, P., et al. (2020). [Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks](https://arxiv.org/abs/2005.11401). NeurIPS 2020.
+* Robertson, S., & Zaragoza, H. (2009). [The Probabilistic Relevance Framework: BM25 and Beyond](https://doi.org/10.1561/1500000019). Foundations and Trends in Information Retrieval.
+* Cormack, G., Clarke, C., & Buettcher, S. (2009). [Reciprocal Rank Fusion Outperforms Condorcet and Individual Rank Learning Methods](https://doi.org/10.1145/1571941.1572114). SIGIR 2009.
+* Edge, D., et al. (2024). [From Local to Global: A Graph RAG Approach to Query-Focused Summarization](https://arxiv.org/abs/2404.16130). Microsoft Research.
+* Jeong, S., et al. (2024). [Adaptive-RAG: Learning to Adapt Retrieval-Augmented Large Language Models through Question Complexity](https://arxiv.org/abs/2403.14403). NAACL 2024.
+* Yan, S., et al. (2024). [Corrective Retrieval Augmented Generation](https://arxiv.org/abs/2401.15884). arXiv preprint.
+* Asai, A., et al. (2023). [Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection](https://arxiv.org/abs/2310.11511). arXiv preprint (ICLR 2024).
+* Greshake, K., et al. (2023). [Not What You've Signed Up For: Compromising Real-World LLM-Integrated Applications with Indirect Prompt Injection](https://arxiv.org/abs/2302.12173). arXiv preprint.
+* Zheng, L., et al. (2023). Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena. NeurIPS 2023 Datasets and Benchmarks.
+* Gao, Y., et al. (2023). [Retrieval-Augmented Generation for Large Language Models: A Survey](https://arxiv.org/abs/2312.10997). arXiv preprint.
+* Anthropic (2024). [Introducing Contextual Retrieval](https://www.anthropic.com/news/contextual-retrieval).
 
 ---
 
 ## Let's Discuss
 
-Have a question about choosing the right RAG architecture, or building one of these in practice? Let's connect:
+If you have measured any of these trade-offs on your own data (hybrid vs. vector retrieval, reranker thresholds, or agents vs. fixed workflows), I would like to learn from what you found, including results that disagree with this post. Corrections are welcome too.
 
 <div class="author-card">
-  <h3>Connect & Collaborate</h3>
-  <p>I write about RAG systems, retrieval quality, and production AI engineering. If you're building a RAG system and want to compare notes, I'd love to hear from you.</p>
+  <div class="author-card-title">Connect & Collaborate</div>
+  <p>I am learning and writing about RAG systems and retrieval quality. If you are building one and want to compare notes, I would be glad to hear from you.</p>
   <div class="author-links">
     <a href="https://www.reddit.com/user/JhaDevesh/" target="_blank" class="author-link-btn reddit-btn">
       <svg class="author-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.01 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056l-2.597-.547-.8 3.747c1.824.07 3.48.632 4.674 1.488.308-.309.73-.491 1.207-.491.968 0 1.754.786 1.754 1.754 0 .716-.435 1.333-1.01 1.614a3.111 3.111 0 0 1 .042.52c0 2.694-3.13 4.87-7.004 4.87-3.874 0-7.004-2.176-7.004-4.87 0-.183.015-.366.043-.534A1.748 1.748 0 0 1 4.028 12c0-.968.786-1.754 1.754-1.754.463 0 .898.196 1.207.49 1.207-.883 2.878-1.43 4.744-1.487l.885-4.182a.342.342 0 0 1 .14-.197.35.35 0 0 1 .238-.042l2.906.617a1.214 1.214 0 0 1 1.108-.703zM9.25 12C8.561 12 8 12.562 8 13.25c0 .687.561 1.248 1.25 1.248.687 0 1.248-.561 1.248-1.249 0-.688-.561-1.249-1.249-1.249zm5.5 0c-.687 0-1.248.561-1.248 1.25 0 .687.561 1.248 1.249 1.248.688 0 1.249-.561 1.249-1.249 0-.687-.562-1.249-1.25-1.249zm-5.466 3.99a.327.327 0 0 0-.231.094.33.33 0 0 0 0 .463c.842.842 2.484.913 2.961.913.477 0 2.105-.056 2.961-.913a.361.361 0 0 0 .029-.463.33.33 0 0 0-.464 0c-.547.533-1.684.73-2.512.73-.828 0-1.979-.197-2.512-.73a.326.326 0 0 0-.232-.095z"/></svg>

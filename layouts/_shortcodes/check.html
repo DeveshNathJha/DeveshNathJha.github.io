@@ -1,0 +1,61 @@
+{{- /*
+  One self-check question with instant feedback.
+  Usage: {{< check q="Question?" options="First|Second|Third" answer="2" explain="Why the right answer is right." >}}
+  answer is 1-based. Without JavaScript, the answer and explanation are shown in a details element.
+*/ -}}
+{{- $id := printf "check-%d" .Ordinal -}}
+{{- $options := split (.Get "options") "|" -}}
+{{- $answer := int (.Get "answer") -}}
+<div class="selfcheck" id="{{ $id }}" data-answer="{{ $answer }}">
+  <div class="sc-tag">Check yourself</div>
+  <p class="sc-q">{{ .Get "q" | markdownify }}</p>
+  <div class="sc-opts" role="group" aria-label="Answer options">
+    {{- range $i, $o := $options }}
+    <button type="button" class="sc-opt" data-i="{{ add $i 1 }}">{{ $o | markdownify }}</button>
+    {{- end }}
+  </div>
+  <p class="sc-feedback" aria-live="polite" hidden></p>
+  <div class="sc-explain" hidden>{{ .Get "explain" | markdownify }}</div>
+  <noscript><details><summary>Show answer</summary><p>Answer: {{ index $options (sub $answer 1) | markdownify }}. {{ .Get "explain" | markdownify }}</p></details></noscript>
+</div>
+
+{{- if not (.Page.Scratch.Get "selfcheck-assets") }}
+{{- .Page.Scratch.Set "selfcheck-assets" true }}
+<style>
+.selfcheck { border: 1px solid var(--border); border-left: 4px solid var(--accent, #a8321f); border-radius: 8px; background: var(--callout-bg, var(--code-bg)); padding: 0.8rem 1rem; margin: 1.4rem 0; }
+.sc-tag { font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; color: var(--accent, #a8321f); }
+.md-content .sc-q { margin: 0.25rem 0 0.6rem; font-weight: 600; color: var(--primary); }
+.sc-opts { display: flex; flex-direction: column; gap: 0.4rem; }
+.sc-opt { font: inherit; font-size: 0.92em; text-align: left; cursor: pointer; padding: 0.55em 0.8em; border: 1px solid var(--border); border-radius: 6px; background: var(--theme); color: var(--primary); }
+.sc-opt:hover:not(:disabled) { border-color: var(--accent, #a8321f); }
+.sc-opt:disabled { cursor: default; }
+.sc-opt.sc-right { border-color: #16803c; box-shadow: 0 0 0 1px #16803c inset; }
+.sc-opt.sc-wrong { border-color: #b4321f; box-shadow: 0 0 0 1px #b4321f inset; opacity: 0.85; }
+.md-content .sc-feedback { margin: 0.6rem 0 0.2rem; font-weight: 700; }
+.sc-feedback.sc-ok { color: #16803c; }
+.sc-feedback.sc-bad { color: #b4321f; }
+:root[data-theme="dark"] .sc-feedback.sc-ok { color: #5cc98a; }
+:root[data-theme="dark"] .sc-feedback.sc-bad { color: #f0a58f; }
+.sc-explain { font-size: 0.92em; color: var(--content); }
+.sc-explain p { margin: 0; }
+</style>
+<script>
+document.addEventListener("click", function (e) {
+  var btn = e.target.closest(".selfcheck .sc-opt");
+  if (!btn) return;
+  var box = btn.closest(".selfcheck");
+  var right = box.dataset.answer;
+  var correct = btn.dataset.i === right;
+  box.querySelectorAll(".sc-opt").forEach(function (b) {
+    b.disabled = true;
+    if (b.dataset.i === right) b.classList.add("sc-right");
+  });
+  if (!correct) btn.classList.add("sc-wrong");
+  var fb = box.querySelector(".sc-feedback");
+  fb.textContent = correct ? "Correct." : "Not quite.";
+  fb.className = "sc-feedback " + (correct ? "sc-ok" : "sc-bad");
+  fb.hidden = false;
+  box.querySelector(".sc-explain").hidden = false;
+});
+</script>
+{{- end }}

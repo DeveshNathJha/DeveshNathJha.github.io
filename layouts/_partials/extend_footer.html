@@ -1,0 +1,32 @@
+{{- /*
+  Thin reading-progress bar at the top of blog posts.
+  The theme caches the footer per page kind (partialCached), so a template condition on .Section would
+  leak between pages. The check happens in the browser instead: the bar is only added on /posts/<slug>/ pages.
+*/ -}}
+{{- if eq .Kind "page" }}
+<style>
+.read-progress { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 1000; pointer-events: none; }
+.read-progress-fill { height: 100%; width: 0; background: var(--accent, #a8321f); }
+</style>
+<script>
+(function () {
+  var content = document.querySelector(".post-content");
+  if (!content || !/\/posts\/[^/]+\/?$/.test(location.pathname)) return;
+  var bar = document.createElement("div");
+  bar.className = "read-progress";
+  bar.setAttribute("aria-hidden", "true");
+  bar.innerHTML = '<div class="read-progress-fill"></div>';
+  document.body.appendChild(bar);
+  var fill = bar.firstChild;
+  function update() {
+    var start = content.offsetTop;
+    var end = start + content.offsetHeight - window.innerHeight;
+    var p = end > start ? (window.scrollY - start) / (end - start) : 1;
+    fill.style.width = Math.max(0, Math.min(1, p)) * 100 + "%";
+  }
+  window.addEventListener("scroll", update, { passive: true });
+  window.addEventListener("resize", update);
+  update();
+})();
+</script>
+{{- end }}

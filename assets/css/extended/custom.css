@@ -120,10 +120,12 @@ pre code {
     border: 1px solid var(--border);
 }
 
-.author-card h3 {
-    margin-top: 0;
-    margin-bottom: 0.5em;
+/* A div, not a heading, so it does not appear in the table of contents */
+.author-card-title {
+    margin: 0 0 0.5em;
     font-size: 1.4em;
+    font-weight: 700;
+    color: var(--primary);
 }
 
 .author-card p {
